@@ -1,0 +1,49 @@
+{
+  "tables": [
+    {
+      "name": "patients",
+      "description": "患者主表，一行一个患者",
+      "columns": [
+        { "name": "id", "data_type": "BIGINT", "description": "患者ID", "is_pii": true },
+        { "name": "name", "data_type": "VARCHAR(64)", "description": "姓名", "is_pii": true },
+        { "name": "gender", "data_type": "VARCHAR(8)", "description": "性别：男/女", "is_pii": false },
+        { "name": "birth_date", "data_type": "DATE", "description": "出生日期", "is_pii": true },
+        { "name": "insurance_type", "data_type": "VARCHAR(32)", "description": "医保类型", "is_pii": false }
+      ]
+    },
+    {
+      "name": "visits",
+      "description": "就诊记录，含门诊与急诊",
+      "columns": [
+        { "name": "id", "data_type": "BIGINT", "description": "就诊ID", "is_pii": false },
+        { "name": "patient_id", "data_type": "BIGINT", "description": "关联 patients.id", "is_pii": false },
+        { "name": "visit_type", "data_type": "VARCHAR(16)", "description": "就诊类型：outpatient/inpatient/emergency", "is_pii": false },
+        { "name": "visit_date", "data_type": "DATE", "description": "就诊日期", "is_pii": false },
+        { "name": "department_id", "data_type": "BIGINT", "description": "关联 departments.id", "is_pii": false },
+        { "name": "diagnosis", "data_type": "VARCHAR(255)", "description": "诊断结论", "is_pii": false }
+      ]
+    },
+    {
+      "name": "admissions",
+      "description": "住院记录",
+      "columns": [
+        { "name": "id", "data_type": "BIGINT", "description": "住院记录ID", "is_pii": false },
+        { "name": "patient_id", "data_type": "BIGINT", "description": "关联 patients.id", "is_pii": false },
+        { "name": "department_id", "data_type": "BIGINT", "description": "关联 departments.id", "is_pii": false },
+        { "name": "admit_date", "data_type": "DATE", "description": "入院日期", "is_pii": false },
+        { "name": "discharge_date", "data_type": "DATE", "description": "出院日期", "is_pii": false },
+        { "name": "stay_days", "data_type": "INT", "description": "住院天数", "is_pii": false },
+        { "name": "total_cost", "data_type": "NUMERIC(12,2)", "description": "总费用", "is_pii": false }
+      ]
+    },
+    {
+      "name": "departments",
+      "description": "科室字典表",
+      "columns": [
+        { "name": "id", "data_type": "BIGINT", "description": "科室ID", "is_pii": false },
+        { "name": "name", "data_type": "VARCHAR(64)", "description": "科室名称", "is_pii": false },
+        { "name": "category", "data_type": "VARCHAR(32)", "description": "科室分类", "is_pii": false }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "metrics": [
+    {
+      "name": "门诊量",
+      "definition": "统计周期内 visit_type='outpatient' 的就诊记录数",
+      "formula": "COUNT(*) FROM visits WHERE visit_type='outpatient'",
+      "related_tables": ["visits"]
+    },
+    {
+      "name": "平均住院天数",
+      "definition": "统计周期内出院患者的住院天数平均值，按出院日期归属周期",
+      "formula": "AVG(stay_days) FROM admissions WHERE discharge_date 在周期内",
+      "related_tables": ["admissions"]
+    },
+    {
+      "name": "次均费用",
+      "definition": "统计周期内住院总费用 / 住院人次",
+      "formula": "SUM(total_cost) / COUNT(*) FROM admissions",
+      "related_tables": ["admissions"]
+    },
+    {
+      "name": "住院人次",
+      "definition": "统计周期内按入院日期计的住院记录数",
+      "formula": "COUNT(*) FROM admissions WHERE admit_date 在周期内",
+      "related_tables": ["admissions"]
+    },
+    {
+      "name": "科室就诊分布",
+      "definition": "各科室就诊记录数占比，需关联 departments 获取科室名称",
+      "formula": "COUNT(*) GROUP BY department_id",
+      "related_tables": ["visits", "departments"]
+    }
+  ]
+}
