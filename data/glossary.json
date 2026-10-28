@@ -3,27 +3,53 @@
   "terms": [
     {
       "term": "门诊",
-      "aliases": ["门诊患者", "门诊量"],
+      "aliases": [
+        "门诊患者",
+        "门诊量"
+      ],
       "target_type": "enum",
-      "target": { "table": "visit", "column": "activity_type_code", "value": "1" }
+      "target": {
+        "table": "visit",
+        "column": "activity_type_code",
+        "value": "1"
+      }
     },
     {
       "term": "急诊",
-      "aliases": ["急诊患者"],
+      "aliases": [
+        "急诊患者"
+      ],
       "target_type": "enum",
-      "target": { "table": "visit", "column": "activity_type_code", "value": "2" }
+      "target": {
+        "table": "visit",
+        "column": "activity_type_code",
+        "value": "2"
+      }
     },
     {
       "term": "住院",
-      "aliases": ["住院患者", "住院量"],
+      "aliases": [
+        "住院患者",
+        "住院量"
+      ],
       "target_type": "enum",
-      "target": { "table": "visit", "column": "activity_type_code", "value": "5" }
+      "target": {
+        "table": "visit",
+        "column": "activity_type_code",
+        "value": "5"
+      }
     },
     {
       "term": "医保",
-      "aliases": ["医保患者", "医保结算"],
+      "aliases": [
+        "医保患者",
+        "医保结算"
+      ],
       "target_type": "column",
-      "target": { "table": "medical_expense_rec", "column": "medical_cost_pay_type_code" }
+      "target": {
+        "table": "medical_expense_rec",
+        "column": "medical_cost_pay_type_code"
+      }
     }
   ]
 }

@@ -1,5 +1,4 @@
 {
-<<<<<<< HEAD
   "version": "1.0.0",
   "dialect": "oracle",
   "tables": [
@@ -7,8 +6,31 @@
       "name": "visit",
       "description": "就诊记录表，一行一次就诊",
       "grain": "一次就诊",
-      "primary_key": ["visit_id"],
+      "primary_key": [
+        "out_registry_id"
+      ],
       "columns": [
+        {
+          "name": "out_registry_id",
+          "type": "VARCHAR(50)",
+          "description": "挂号流水号(主键)"
+        },
+        {
+          "name": "visit_id",
+          "type": "VARCHAR(50)",
+          "description": "就诊流水号"
+        },
+        {
+          "name": "source_patient_id",
+          "type": "VARCHAR(50)",
+          "description": "患者主索引"
+        },
+        {
+          "name": "id_card",
+          "type": "VARCHAR(32)",
+          "description": "身份证号",
+          "is_pii": true
+        },
         {
           "name": "treatment_occurrence_time",
           "type": "DATE",
@@ -19,62 +41,462 @@
           "type": "VARCHAR(8)",
           "description": "业务类型代码",
           "enum_values": [
-            { "value": "1", "label": "门诊" },
-            { "value": "2", "label": "急诊" },
-            { "value": "5", "label": "住院" }
+            {
+              "value": "1",
+              "label": "门诊"
+            },
+            {
+              "value": "2",
+              "label": "急诊"
+            },
+            {
+              "value": "5",
+              "label": "住院"
+            }
           ]
+        },
+        {
+          "name": "patient_properties_code",
+          "type": "VARCHAR(20)",
+          "description": "患者费用性质代码"
+        },
+        {
+          "name": "patient_properties_name",
+          "type": "VARCHAR(200)",
+          "description": "患者费用性质名称"
+        },
+        {
+          "name": "operation_counts",
+          "type": "INTEGER",
+          "description": "手术台次"
+        },
+        {
+          "name": "first_visit_sign_code",
+          "type": "VARCHAR(8)",
+          "description": "初诊标志代码"
+        },
+        {
+          "name": "first_visit_sign_name",
+          "type": "VARCHAR(200)",
+          "description": "初诊标志名称"
+        },
+        {
+          "name": "visit_status_code",
+          "type": "VARCHAR(8)",
+          "description": "就诊状态代码"
+        },
+        {
+          "name": "visit_status_name",
+          "type": "VARCHAR(200)",
+          "description": "就诊状态名称"
+        },
+        {
+          "name": "operator_id",
+          "type": "VARCHAR(50)",
+          "description": "操作人Id"
+        },
+        {
+          "name": "operation_time",
+          "type": "DATE",
+          "description": "操作时间"
+        },
+        {
+          "name": "handle_time",
+          "type": "DATE",
+          "description": "处理时间"
+        },
+        {
+          "name": "batch_no",
+          "type": "VARCHAR(64)",
+          "description": "批次日"
+        },
+        {
+          "name": "modify_flag",
+          "type": "VARCHAR(2)",
+          "description": "修改标志"
+        }
+      ]
+    },
+    {
+      "name": "medical_expense_rec",
+      "description": "医疗费用记录表",
+      "grain": "一次结算记录",
+      "primary_key": [
+        "visit_id"
+      ],
+      "columns": [
+        {
+          "name": "visit_id",
+          "type": "VARCHAR(50)",
+          "description": "就诊流水号"
+        },
+        {
+          "name": "settle_date_time",
+          "type": "DATE",
+          "description": "结算时间"
+        },
+        {
+          "name": "outpatient_cost",
+          "type": "NUMBER",
+          "description": "门诊费用"
+        },
+        {
+          "name": "hospization_total_cost",
+          "type": "NUMBER",
+          "description": "住院总费用"
+        },
+        {
+          "name": "personal_cost",
+          "type": "NUMBER",
+          "description": "个人自付费用"
+        },
+        {
+          "name": "medical_cost_pay_type_code",
+          "type": "VARCHAR(8)",
+          "description": "医疗费用支付类型代码(医保等)"
+        },
+        {
+          "name": "source_patient_id_type",
+          "type": "VARCHAR(8)",
+          "description": "患者ID类型(IV表示住院)"
+        },
+        {
+          "name": "modify_flag",
+          "type": "VARCHAR(2)",
+          "description": "修改标志"
+        }
+      ]
+    },
+    {
+      "name": "patient",
+      "description": "患者基本信息表",
+      "grain": "一个患者",
+      "primary_key": [
+        "source_patient_id"
+      ],
+      "columns": [
+        {
+          "name": "source_patient_id",
+          "type": "VARCHAR(50)",
+          "description": "患者主索引"
+        },
+        {
+          "name": "patient_name",
+          "type": "VARCHAR(100)",
+          "description": "患者姓名",
+          "is_pii": true
+        },
+        {
+          "name": "sex_code",
+          "type": "VARCHAR(8)",
+          "description": "性别代码(1男,2女)",
+          "enum_values": [
+            {
+              "value": "1",
+              "label": "男"
+            },
+            {
+              "value": "2",
+              "label": "女"
+            }
+          ]
+        },
+        {
+          "name": "birth_date",
+          "type": "DATE",
+          "description": "出生日期"
+        },
+        {
+          "name": "modify_flag",
+          "type": "VARCHAR(2)",
+          "description": "修改标志"
+        }
+      ]
+    },
+    {
+      "name": "encounter_medical_cost",
+      "description": "门急诊费用明细表",
+      "grain": "一条费用明细",
+      "primary_key": [
+        "dcid"
+      ],
+      "columns": [
+        {
+          "name": "dcid",
+          "type": "VARCHAR(50)",
+          "description": "费用明细ID"
+        },
+        {
+          "name": "visit_id",
+          "type": "VARCHAR(50)",
+          "description": "就诊流水号"
+        },
+        {
+          "name": "cost_date",
+          "type": "DATE",
+          "description": "费用发生日期"
+        },
+        {
+          "name": "charging_date",
+          "type": "DATE",
+          "description": "收费日期"
+        },
+        {
+          "name": "item_type",
+          "type": "VARCHAR(8)",
+          "description": "费用项目类型代码"
+        },
+        {
+          "name": "item_name",
+          "type": "VARCHAR(200)",
+          "description": "费用项目名称"
+        },
+        {
+          "name": "total_cost",
+          "type": "NUMBER",
+          "description": "总费用"
+        },
+        {
+          "name": "patient_type_code",
+          "type": "VARCHAR(8)",
+          "description": "患者类型代码"
+        },
+        {
+          "name": "modify_flag",
+          "type": "VARCHAR(2)",
+          "description": "修改标志"
+        }
+      ]
+    },
+    {
+      "name": "advice_cost",
+      "description": "住院医嘱费用记录表",
+      "grain": "一条住院费用明细",
+      "primary_key": [
+        "dcid"
+      ],
+      "columns": [
+        {
+          "name": "dcid",
+          "type": "VARCHAR(50)",
+          "description": "医嘱明细ID"
+        },
+        {
+          "name": "visit_id",
+          "type": "VARCHAR(50)",
+          "description": "就诊流水号"
+        },
+        {
+          "name": "cost_date",
+          "type": "DATE",
+          "description": "费用发生日期"
+        },
+        {
+          "name": "item_type_code",
+          "type": "VARCHAR(8)",
+          "description": "费用项目类型代码"
+        },
+        {
+          "name": "item_type_name",
+          "type": "VARCHAR(200)",
+          "description": "费用项目类型名称"
+        },
+        {
+          "name": "total_cost",
+          "type": "NUMBER",
+          "description": "总费用"
+        },
+        {
+          "name": "self_cost",
+          "type": "NUMBER",
+          "description": "自费费用"
+        },
+        {
+          "name": "self_care_cost",
+          "type": "NUMBER",
+          "description": "自付费用"
+        },
+        {
+          "name": "modify_flag",
+          "type": "VARCHAR(2)",
+          "description": "修改标志"
+        }
+      ]
+    },
+    {
+      "name": "operation_record",
+      "description": "手术记录表",
+      "grain": "一次手术记录",
+      "primary_key": [
+        "dcid"
+      ],
+      "columns": [
+        {
+          "name": "dcid",
+          "type": "VARCHAR(50)",
+          "description": "手术记录ID"
+        },
+        {
+          "name": "visit_id",
+          "type": "VARCHAR(50)",
+          "description": "就诊流水号"
+        },
+        {
+          "name": "operation_date_time",
+          "type": "DATE",
+          "description": "手术日期时间"
+        },
+        {
+          "name": "operation_period_type_code",
+          "type": "VARCHAR(8)",
+          "description": "手术期类别代码"
+        },
+        {
+          "name": "modify_flag",
+          "type": "VARCHAR(2)",
+          "description": "修改标志"
+        }
+      ]
+    },
+    {
+      "name": "operation_operation",
+      "description": "手术操作明细表",
+      "grain": "一条手术操作",
+      "primary_key": [
+        "dcid"
+      ],
+      "columns": [
+        {
+          "name": "dcid",
+          "type": "VARCHAR(50)",
+          "description": "手术记录ID"
+        },
+        {
+          "name": "operation_start_date_time",
+          "type": "DATE",
+          "description": "手术开始时间"
+        },
+        {
+          "name": "operation_code",
+          "type": "VARCHAR(50)",
+          "description": "手术操作代码"
+        },
+        {
+          "name": "operation_level_code",
+          "type": "VARCHAR(8)",
+          "description": "手术级别代码"
+        },
+        {
+          "name": "modify_flag",
+          "type": "VARCHAR(2)",
+          "description": "修改标志"
+        }
+      ]
+    },
+    {
+      "name": "qmjk_dict",
+      "description": "全民健康字典表",
+      "grain": "字典项",
+      "primary_key": [
+        "dict_code"
+      ],
+      "columns": [
+        {
+          "name": "dict_type",
+          "type": "VARCHAR(50)",
+          "description": "字典类型"
+        },
+        {
+          "name": "dict_code",
+          "type": "VARCHAR(50)",
+          "description": "字典代码"
+        },
+        {
+          "name": "dict_label",
+          "type": "VARCHAR(200)",
+          "description": "字典中文名称"
+        }
+      ]
+    },
+    {
+      "name": "examination_record",
+      "description": "检查记录表",
+      "grain": "一次检查",
+      "primary_key": [
+        "dcid"
+      ],
+      "columns": [
+        {
+          "name": "dcid",
+          "type": "VARCHAR(50)",
+          "description": "检查记录ID"
+        },
+        {
+          "name": "visit_id",
+          "type": "VARCHAR(50)",
+          "description": "就诊流水号"
+        },
+        {
+          "name": "execute_date",
+          "type": "DATE",
+          "description": "执行日期"
+        },
+        {
+          "name": "visit_date_time",
+          "type": "DATE",
+          "description": "就诊日期时间"
+        },
+        {
+          "name": "examination_item_code",
+          "type": "VARCHAR(50)",
+          "description": "检查项目代码"
+        },
+        {
+          "name": "examination_item_name",
+          "type": "VARCHAR(200)",
+          "description": "检查项目名称"
+        },
+        {
+          "name": "modify_flag",
+          "type": "VARCHAR(2)",
+          "description": "修改标志"
+        }
+      ]
+    },
+    {
+      "name": "inspection_record",
+      "description": "检验记录表",
+      "grain": "一次检验",
+      "primary_key": [
+        "dcid"
+      ],
+      "columns": [
+        {
+          "name": "dcid",
+          "type": "VARCHAR(50)",
+          "description": "检验记录ID"
+        },
+        {
+          "name": "visit_id",
+          "type": "VARCHAR(50)",
+          "description": "就诊流水号"
+        },
+        {
+          "name": "inspection_date",
+          "type": "DATE",
+          "description": "检验日期"
+        },
+        {
+          "name": "activity_type_code",
+          "type": "VARCHAR(8)",
+          "description": "业务类型代码"
+        },
+        {
+          "name": "modify_flag",
+          "type": "VARCHAR(2)",
+          "description": "修改标志"
         }
       ]
     }
   ]
 }
-=======
-  "tables": [
-    {
-      "name": "patients",
-      "description": "患者主表，一行一个患者",
-      "columns": [
-        { "name": "id", "data_type": "BIGINT", "description": "患者ID", "is_pii": true },
-        { "name": "name", "data_type": "VARCHAR(64)", "description": "姓名", "is_pii": true },
-        { "name": "gender", "data_type": "VARCHAR(8)", "description": "性别：男/女", "is_pii": false },
-        { "name": "birth_date", "data_type": "DATE", "description": "出生日期", "is_pii": true },
-        { "name": "insurance_type", "data_type": "VARCHAR(32)", "description": "医保类型", "is_pii": false }
-      ]
-    },
-    {
-      "name": "visits",
-      "description": "就诊记录，含门诊与急诊",
-      "columns": [
-        { "name": "id", "data_type": "BIGINT", "description": "就诊ID", "is_pii": false },
-        { "name": "patient_id", "data_type": "BIGINT", "description": "关联 patients.id", "is_pii": false },
-        { "name": "visit_type", "data_type": "VARCHAR(16)", "description": "就诊类型：outpatient/inpatient/emergency", "is_pii": false },
-        { "name": "visit_date", "data_type": "DATE", "description": "就诊日期", "is_pii": false },
-        { "name": "department_id", "data_type": "BIGINT", "description": "关联 departments.id", "is_pii": false },
-        { "name": "diagnosis", "data_type": "VARCHAR(255)", "description": "诊断结论", "is_pii": false }
-      ]
-    },
-    {
-      "name": "admissions",
-      "description": "住院记录",
-      "columns": [
-        { "name": "id", "data_type": "BIGINT", "description": "住院记录ID", "is_pii": false },
-        { "name": "patient_id", "data_type": "BIGINT", "description": "关联 patients.id", "is_pii": false },
-        { "name": "department_id", "data_type": "BIGINT", "description": "关联 departments.id", "is_pii": false },
-        { "name": "admit_date", "data_type": "DATE", "description": "入院日期", "is_pii": false },
-        { "name": "discharge_date", "data_type": "DATE", "description": "出院日期", "is_pii": false },
-        { "name": "stay_days", "data_type": "INT", "description": "住院天数", "is_pii": false },
-        { "name": "total_cost", "data_type": "NUMERIC(12,2)", "description": "总费用", "is_pii": false }
-      ]
-    },
-    {
-      "name": "departments",
-      "description": "科室字典表",
-      "columns": [
-        { "name": "id", "data_type": "BIGINT", "description": "科室ID", "is_pii": false },
-        { "name": "name", "data_type": "VARCHAR(64)", "description": "科室名称", "is_pii": false },
-        { "name": "category", "data_type": "VARCHAR(32)", "description": "科室分类", "is_pii": false }
-      ]
-    }
-  ]
-}
->>>>>>> 005007ac1a26ea3f624369a54a34d97ba97c22a6

@@ -8,7 +8,9 @@
       "source_oracle_id": "ex_outpatient_count",
       "question": "统计2025年1月门诊人次",
       "sql": "SELECT COUNT(DISTINCT visit_id || id_card || treatment_occurrence_time) AS cnt FROM visit WHERE activity_type_code = '1' AND modify_flag IN ('1','2') AND treatment_occurrence_time >= '2025-01-01' AND treatment_occurrence_time < '2025-02-01'",
-      "tables": ["visit"],
+      "tables": [
+        "visit"
+      ],
       "pattern": "filter+count_distinct",
       "notes": "按就诊发生日期；人次去重；日期列为 TEXT"
     },
@@ -17,7 +19,9 @@
       "source_oracle_id": "ex_emergency_count",
       "question": "统计2025年1月急诊人次",
       "sql": "SELECT COUNT(DISTINCT visit_id || id_card || treatment_occurrence_time) AS cnt FROM visit WHERE activity_type_code = '2' AND modify_flag IN ('1','2') AND treatment_occurrence_time >= '2025-01-01' AND treatment_occurrence_time < '2025-02-01'",
-      "tables": ["visit"],
+      "tables": [
+        "visit"
+      ],
       "pattern": "filter+count_distinct",
       "notes": "按就诊发生日期；人次去重；日期列为 TEXT"
     },
@@ -26,7 +30,10 @@
       "source_oracle_id": "ex_male_count",
       "question": "统计2025年男性患者人次",
       "sql": "SELECT COUNT(DISTINCT a.visit_id || a.id_card || a.treatment_occurrence_time) AS cnt FROM visit a LEFT JOIN patient b ON a.source_patient_id = b.source_patient_id WHERE a.modify_flag IN ('1','2') AND a.treatment_occurrence_time >= '2025-01-01' AND a.treatment_occurrence_time < '2026-01-01' AND b.sex_code = '1'",
-      "tables": ["visit", "patient"],
+      "tables": [
+        "visit",
+        "patient"
+      ],
       "pattern": "join+filter+count_distinct",
       "notes": "关联 patient 表查性别；日期列为 TEXT"
     }
