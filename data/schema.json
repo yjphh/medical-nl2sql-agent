@@ -1,0 +1,29 @@
+{
+  "version": "1.0.0",
+  "dialect": "oracle",
+  "tables": [
+    {
+      "name": "visit",
+      "description": "就诊记录表，一行一次就诊",
+      "grain": "一次就诊",
+      "primary_key": ["visit_id"],
+      "columns": [
+        {
+          "name": "treatment_occurrence_time",
+          "type": "DATE",
+          "description": "就诊发生时间"
+        },
+        {
+          "name": "activity_type_code",
+          "type": "VARCHAR(8)",
+          "description": "业务类型代码",
+          "enum_values": [
+            { "value": "1", "label": "门诊" },
+            { "value": "2", "label": "急诊" },
+            { "value": "5", "label": "住院" }
+          ]
+        }
+      ]
+    }
+  ]
+}

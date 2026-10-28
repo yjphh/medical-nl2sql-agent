@@ -1,0 +1,29 @@
+{
+  "version": "1.0.0",
+  "rules": [
+    {
+      "code": "time_range",
+      "trigger_terms": ["上个月", "本月", "最近", "近"],
+      "question": "您说的『{term}』是指自然月还是最近30天？",
+      "options": ["自然月", "最近30天"],
+      "default": "自然月",
+      "blocking": true
+    },
+    {
+      "code": "visit_type_scope",
+      "trigger_terms": ["门诊人次", "门急诊"],
+      "question": "门诊人次是只统计门诊，还是包含急诊？",
+      "options": ["仅门诊", "门诊+急诊"],
+      "default": "仅门诊",
+      "blocking": true
+    },
+    {
+      "code": "fee_type",
+      "trigger_terms": ["总费用", "收入"],
+      "question": "您是指门急诊总收入，还是住院总收入？",
+      "options": ["门急诊", "住院"],
+      "default": "门急诊",
+      "blocking": true
+    }
+  ]
+}
