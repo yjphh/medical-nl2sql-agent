@@ -1,65 +1,85 @@
-import json
-import os
+"""Single entry point for the knowledge layer used by the graph/API layer."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from app.knowledge.ambiguity_catalog import AmbiguityCatalog
+from app.knowledge.context_builder import build_context
+from app.knowledge.example_catalog import ExampleCatalog
+from app.knowledge.glossary import Glossary
+from app.knowledge.loader import load_knowledge
+from app.knowledge.metric_catalog import MetricCatalog
+from app.knowledge.models import (
+    AmbiguityReport,
+    KnowledgeBundle,
+    MetricInfo,
+    SchemaContext,
+    SQLExample,
+    TermResolution,
+)
+from app.knowledge.schema_catalog import SchemaCatalog
+
 
 class FileKnowledgeProvider:
-    def __init__(self, data_dir="data"):
-        self.data_dir = data_dir
-        self.metrics_data = self._load_json("metrics.json")
-        self.schema_data = self._load_json("schema.json")
-        self.glossary_data = self._load_json("glossary.json")
-        self.ambiguities_data = self._load_json("ambiguities.json")
-        self.examples_data = self._load_json("sql_examples_sqlite.json")
+    def __init__(self, data_or_bundle: str | Path | KnowledgeBundle = "data") -> None:
+        if isinstance(data_or_bundle, KnowledgeBundle):
+            self.bundle = data_or_bundle
+        else:
+            self.bundle = load_knowledge(data_or_bundle)
+        self.schema_catalog = SchemaCatalog(self.bundle.tables, self.bundle.dialect)
+        self.metric_catalog = MetricCatalog(self.bundle.metrics)
+        self.glossary = Glossary(self.bundle.terms)
+        self.ambiguity_catalog = AmbiguityCatalog(self.bundle.ambiguities)
+        self.example_catalog = ExampleCatalog(self.bundle.examples)
 
-    def _load_json(self, filename):
-        path = os.path.join(self.data_dir, filename)
-        if not os.path.exists(path):
-            print(f"⚠️ 警告: 找不到文件 {path}")
-            return {}
-        with open(path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+    def search_metrics(self, question: str, top_k: int = 5) -> list[MetricInfo]:
+        return self.metric_catalog.search(question, top_k=top_k)
 
-    # 1. 找指标
-    def search_metrics(self, question, top_k=5):
-        results = []
-        for m in self.metrics_data.get("metrics", []):
-            # 极其简单的关键词匹配：如果指标名在问题里
-            if m["name"] in question or any(alias in question for alias in m.get("aliases", [])):
-                results.append(m)
-        return results[:top_k]
+    def resolve_terms(self, question: str) -> list[TermResolution]:
+        return self.glossary.resolve(question)
 
-    # 2. 翻译黑话
-    def resolve_terms(self, question):
-        resolved = []
-        for t in self.glossary_data.get("terms", []):
-            if t["term"] in question or any(alias in question for alias in t.get("aliases", [])):
-                resolved.append(t)
-        return resolved
+    def detect_ambiguities(
+        self,
+        question: str,
+        terms: list[TermResolution] | None = None,
+        asked_codes: list[str] | None = None,
+    ) -> AmbiguityReport:
+        return self.ambiguity_catalog.detect(
+            question, terms=terms, asked_codes=asked_codes
+        )
 
-    # 3. 找歧义
-    def detect_ambiguities(self, question, terms=None):
-        detected = []
-        for rule in self.ambiguities_data.get("rules", []):
-            for trigger in rule.get("trigger_terms", []):
-                if trigger in question:
-                    detected.append(rule)
-                    break
-        return detected
+    def search_sql_examples(
+        self,
+        question: str,
+        top_k: int = 3,
+        metrics: list[MetricInfo] | None = None,
+        terms: list[TermResolution] | None = None,
+    ) -> list[SQLExample]:
+        return self.example_catalog.search(
+            question,
+            metrics=metrics,
+            terms=terms,
+            top_k=top_k,
+        )
 
-    # 4. 找相似 SQL 示例
-    def search_sql_examples(self, question, top_k=2):
-        results = []
-        for ex in self.examples_data.get("examples", []):
-            # 简单的匹配：问题里的字出现在示例问题里
-            if any(char in ex["question"] for char in question if len(char) > 0):
-                results.append(ex)
-        return results[:top_k]
-
-    # 5. 拼装给大模型的上下文
-    def get_schema_context(self, question, intent=None):
-        # 简化版：直接返回核心表的 Schema
-        context = "数据库表结构如下：\n"
-        for table in self.schema_data.get("tables", []):
-            context += f"表名: {table['name']} ({table.get('description', '')})\n"
-            for col in table.get("columns", []):
-                context += f"  - {col['name']} ({col.get('type', '')}): {col.get('description', '')}\n"
-        return context
+    def get_schema_context(
+        self,
+        question: str,
+        intent: dict | None = None,
+        max_chars: int = 8000,
+    ) -> SchemaContext:
+        terms = self.resolve_terms(question)
+        metrics = self.search_metrics(question)
+        examples = self.search_sql_examples(question, metrics=metrics, terms=terms)
+        return build_context(
+            question=question,
+            terms=terms,
+            metrics=metrics,
+            examples=examples,
+            schema_catalog=self.schema_catalog,
+            metric_catalog=self.metric_catalog,
+            glossary=self.glossary,
+            example_catalog=self.example_catalog,
+            max_chars=max_chars,
+        )

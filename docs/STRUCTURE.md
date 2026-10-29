@@ -35,9 +35,17 @@ medical-nl2sql-agent/
 │   │       └── answer_merger.py    # 结果归纳为自然语言
 │   ├── prompts/              # LLM 提示词模板（预留）
 │   ├── knowledge/            # 领域知识（读取 data/ 下知识文件）
-│   │   ├── loader.py           # 统一加载入口
-│   │   ├── schema_catalog.py   # 表/列元数据目录（供 prompt 构造查询）
-│   │   └── metric_catalog.py   # 业务指标口径目录（防 LLM 猜口径）
+│   │   ├── models.py           # 6 个 JSON 的 dataclass
+│   │   ├── loader.py           # 统一加载 + 版本/引用校验
+│   │   ├── schema_catalog.py   # 表/列/关系/相关表/上下文
+│   │   ├── metric_catalog.py   # 指标检索
+│   │   ├── glossary.py         # 术语解析
+│   │   ├── ambiguity_catalog.py# 歧义规则匹配/渲染
+│   │   ├── example_catalog.py  # SQL 示例检索
+│   │   ├── context_builder.py  # 拼 prompt 上下文
+│   │   ├── provider.py         # 对编排层的 5 个方法
+│   │   ├── validate.py         # 数据校验 CLI
+│   │   └── inspect.py          # 演示 CLI
 │   ├── tools/                # 工具层
 │   │   ├── sql_generator/      # SQL 生成器
 │   │   │   ├── base.py           # 抽象接口

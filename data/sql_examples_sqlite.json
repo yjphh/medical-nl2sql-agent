@@ -15,39 +15,40 @@
       "notes": "按就诊发生日期；人次去重"
     },
     {
-      "id": "ex_sqlite_emergency_visits",
-      "source_gold_id": "gold_emergency_visits",
-      "question": "统计2025年1月急诊人次",
-      "tables": [
-        "visit"
-      ],
-      "pattern": "filter+count_distinct",
-      "sql": "SELECT COUNT(DISTINCT visit_id || id_card || treatment_occurrence_time) AS cnt FROM visit WHERE activity_type_code = '2' AND modify_flag IN ('1','2') AND treatment_occurrence_time >= '2025-01-01' AND treatment_occurrence_time < '2025-02-01'",
-      "notes": "按就诊发生日期；人次去重"
-    },
-    {
-      "id": "ex_sqlite_insured_visits",
-      "source_gold_id": "gold_insured_visits",
-      "question": "统计2025年1月医保患者人次",
+      "id": "ex_sqlite_outpatient_avg_cost",
+      "source_gold_id": "gold_formula_outpatient_avg_cost",
+      "question": "统计2025年1月门诊均次费用",
       "tables": [
         "visit",
         "medical_expense_rec"
       ],
-      "pattern": "exists+count_distinct",
-      "sql": "SELECT COUNT(DISTINCT v.visit_id || v.id_card || v.treatment_occurrence_time) AS cnt FROM visit v WHERE v.activity_type_code IN ('1','2') AND v.modify_flag IN ('1','2') AND v.treatment_occurrence_time >= '2025-01-01' AND v.treatment_occurrence_time < '2025-02-01' AND EXISTS (SELECT 1 FROM medical_expense_rec m WHERE m.visit_id = v.visit_id AND m.medical_cost_pay_type_code IN ('01','02','03','09') AND m.modify_flag IN ('1','2'))",
-      "notes": "医保代码 01/02/03/09；门诊+急诊"
+      "pattern": "cte+avg",
+      "sql": "WITH per_visit AS (SELECT v.visit_id, IFNULL(SUM(m.outpatient_cost), 0) AS visit_cost FROM visit v JOIN medical_expense_rec m ON m.visit_id = v.visit_id WHERE v.activity_type_code IN ('1','2') AND v.modify_flag IN ('1','2') AND m.modify_flag IN ('1','2') AND v.treatment_occurrence_time >= '2025-01-01' AND v.treatment_occurrence_time < '2025-02-01' GROUP BY v.visit_id) SELECT IFNULL(ROUND(AVG(visit_cost), 2), 0) AS avg_cost FROM per_visit",
+      "notes": "先按就诊汇总费用，再求平均，避免明细 join 扇出"
     },
     {
-      "id": "ex_sqlite_male_patients",
-      "source_gold_id": "gold_male_patients",
-      "question": "统计2025年1月男性患者人次",
+      "id": "ex_sqlite_outpatient_insured_ratio",
+      "source_gold_id": "gold_formula_outpatient_insured_ratio",
+      "question": "统计2025年1月门急诊医保患者比例",
       "tables": [
         "visit",
-        "patient"
+        "medical_expense_rec"
       ],
-      "pattern": "join+filter+count_distinct",
-      "sql": "SELECT COUNT(DISTINCT v.visit_id || v.id_card || v.treatment_occurrence_time) AS cnt FROM visit v JOIN patient p ON p.source_patient_id = v.source_patient_id WHERE v.activity_type_code IN ('1','2') AND p.sex_code = '1' AND v.modify_flag IN ('1','2') AND p.modify_flag IN ('1','2') AND v.treatment_occurrence_time >= '2025-01-01' AND v.treatment_occurrence_time < '2025-02-01'",
-      "notes": "性别代码 1=男；join 患者"
+      "pattern": "ratio",
+      "sql": "SELECT IFNULL(ROUND(100.0 * SUM(CASE WHEN EXISTS (SELECT 1 FROM medical_expense_rec m WHERE m.visit_id = v.visit_id AND m.medical_cost_pay_type_code IN ('01','02','03','09') AND m.modify_flag IN ('1','2')) THEN 1 ELSE 0 END) / NULLIF(COUNT(DISTINCT v.visit_id || v.id_card || v.treatment_occurrence_time), 0), 2), 0) AS ratio FROM visit v WHERE v.activity_type_code IN ('1','2') AND v.modify_flag IN ('1','2') AND v.treatment_occurrence_time >= '2025-01-01' AND v.treatment_occurrence_time < '2025-02-01'",
+      "notes": "分母为门诊+急诊人次；分子用 EXISTS 避免费用明细扇出"
+    },
+    {
+      "id": "ex_sqlite_inpatient_insured_ratio",
+      "source_gold_id": "gold_formula_inpatient_insured_ratio",
+      "question": "统计2025年1月住院医保患者比例",
+      "tables": [
+        "visit",
+        "medical_expense_rec"
+      ],
+      "pattern": "ratio",
+      "sql": "SELECT IFNULL(ROUND(100.0 * SUM(CASE WHEN EXISTS (SELECT 1 FROM medical_expense_rec m WHERE m.visit_id = v.visit_id AND m.medical_cost_pay_type_code IN ('01','02','03','09') AND m.modify_flag IN ('1','2')) THEN 1 ELSE 0 END) / NULLIF(COUNT(DISTINCT v.visit_id || v.id_card || v.treatment_occurrence_time), 0), 2), 0) AS ratio FROM visit v WHERE v.activity_type_code IN ('5','6','9') AND v.modify_flag IN ('1','2') AND v.treatment_occurrence_time >= '2025-01-01' AND v.treatment_occurrence_time < '2025-02-01'",
+      "notes": "住院活动类型 5/6/9；分母为住院人次"
     },
     {
       "id": "ex_sqlite_outpatient_total_revenue",
