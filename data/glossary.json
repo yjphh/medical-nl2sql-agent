@@ -1,18 +1,333 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "terms": [
+    {
+      "term": "就诊记录",
+      "aliases": [],
+      "target_type": "table",
+      "target": {
+        "table": "visit"
+      },
+      "source": "schema.table",
+      "confidence": "high"
+    },
+    {
+      "term": "患者",
+      "aliases": [],
+      "target_type": "table",
+      "target": {
+        "table": "patient"
+      },
+      "source": "schema.table",
+      "confidence": "high"
+    },
+    {
+      "term": "医疗费用记录",
+      "aliases": [],
+      "target_type": "table",
+      "target": {
+        "table": "medical_expense_rec"
+      },
+      "source": "schema.table",
+      "confidence": "high"
+    },
+    {
+      "term": "门急诊费用",
+      "aliases": [],
+      "target_type": "table",
+      "target": {
+        "table": "encounter_medical_cost"
+      },
+      "source": "schema.table",
+      "confidence": "high"
+    },
+    {
+      "term": "医嘱费用",
+      "aliases": [],
+      "target_type": "table",
+      "target": {
+        "table": "advice_cost"
+      },
+      "source": "schema.table",
+      "confidence": "high"
+    },
+    {
+      "term": "检查记录",
+      "aliases": [],
+      "target_type": "table",
+      "target": {
+        "table": "examination_record"
+      },
+      "source": "schema.table",
+      "confidence": "high"
+    },
+    {
+      "term": "检查项目",
+      "aliases": [],
+      "target_type": "table",
+      "target": {
+        "table": "examination_exam"
+      },
+      "source": "schema.table",
+      "confidence": "high"
+    },
+    {
+      "term": "检验记录",
+      "aliases": [],
+      "target_type": "table",
+      "target": {
+        "table": "inspection_record"
+      },
+      "source": "schema.table",
+      "confidence": "high"
+    },
+    {
+      "term": "手术记录",
+      "aliases": [],
+      "target_type": "table",
+      "target": {
+        "table": "operation_record"
+      },
+      "source": "schema.table",
+      "confidence": "high"
+    },
+    {
+      "term": "手术操作",
+      "aliases": [],
+      "target_type": "table",
+      "target": {
+        "table": "operation_operation"
+      },
+      "source": "schema.table",
+      "confidence": "high"
+    },
+    {
+      "term": "处方记录",
+      "aliases": [],
+      "target_type": "table",
+      "target": {
+        "table": "prescription_record"
+      },
+      "source": "schema.table",
+      "confidence": "high"
+    },
+    {
+      "term": "诊断记录",
+      "aliases": [],
+      "target_type": "table",
+      "target": {
+        "table": "diagnose_record"
+      },
+      "source": "schema.table",
+      "confidence": "high"
+    },
+    {
+      "term": "字典",
+      "aliases": [],
+      "target_type": "table",
+      "target": {
+        "table": "qmjk_dict"
+      },
+      "source": "schema.table",
+      "confidence": "high"
+    },
+    {
+      "term": "就诊时间",
+      "aliases": [
+        "诊疗时间",
+        "发生时间"
+      ],
+      "target_type": "time_range",
+      "target": {
+        "table": "visit",
+        "column": "treatment_occurrence_time"
+      },
+      "source": "schema.time",
+      "confidence": "high",
+      "match": "time_range"
+    },
+    {
+      "term": "入院时间",
+      "aliases": [
+        "入院日期"
+      ],
+      "target_type": "time_range",
+      "target": {
+        "table": "visit",
+        "column": "admission_date_time"
+      },
+      "source": "schema.time",
+      "confidence": "high",
+      "match": "time_range"
+    },
+    {
+      "term": "出院时间",
+      "aliases": [
+        "出院日期"
+      ],
+      "target_type": "time_range",
+      "target": {
+        "table": "visit",
+        "column": "discharge_date_time"
+      },
+      "source": "schema.time",
+      "confidence": "high",
+      "match": "time_range"
+    },
+    {
+      "term": "结算时间",
+      "aliases": [
+        "结算日期"
+      ],
+      "target_type": "time_range",
+      "target": {
+        "table": "medical_expense_rec",
+        "column": "settle_date_time"
+      },
+      "source": "schema.time",
+      "confidence": "high",
+      "match": "time_range"
+    },
+    {
+      "term": "门急诊费用发生日期",
+      "aliases": [
+        "门急诊费用日期"
+      ],
+      "target_type": "time_range",
+      "target": {
+        "table": "encounter_medical_cost",
+        "column": "cost_date"
+      },
+      "source": "schema.time",
+      "confidence": "high",
+      "match": "time_range"
+    },
+    {
+      "term": "住院费用发生日期",
+      "aliases": [
+        "住院费用日期"
+      ],
+      "target_type": "time_range",
+      "target": {
+        "table": "advice_cost",
+        "column": "cost_date"
+      },
+      "source": "schema.time",
+      "confidence": "high",
+      "match": "time_range"
+    },
+    {
+      "term": "检查日期",
+      "aliases": [
+        "检查时间"
+      ],
+      "target_type": "time_range",
+      "target": {
+        "table": "examination_record",
+        "column": "execute_date"
+      },
+      "source": "schema.time",
+      "confidence": "high",
+      "match": "time_range"
+    },
+    {
+      "term": "检验日期",
+      "aliases": [
+        "检验时间"
+      ],
+      "target_type": "time_range",
+      "target": {
+        "table": "inspection_record",
+        "column": "inspection_date"
+      },
+      "source": "schema.time",
+      "confidence": "high",
+      "match": "time_range"
+    },
+    {
+      "term": "处方日期",
+      "aliases": [
+        "开方日期"
+      ],
+      "target_type": "time_range",
+      "target": {
+        "table": "prescription_record",
+        "column": "prescription_date"
+      },
+      "source": "schema.time",
+      "confidence": "high",
+      "match": "time_range"
+    },
+    {
+      "term": "诊断日期",
+      "aliases": [
+        "诊断时间"
+      ],
+      "target_type": "time_range",
+      "target": {
+        "table": "diagnose_record",
+        "column": "diag_n_osis_date"
+      },
+      "source": "schema.time",
+      "confidence": "high",
+      "match": "time_range"
+    },
+    {
+      "term": "手术开始时间",
+      "aliases": [
+        "手术时间"
+      ],
+      "target_type": "time_range",
+      "target": {
+        "table": "operation_operation",
+        "column": "operation_start_date_time"
+      },
+      "source": "schema.time",
+      "confidence": "high",
+      "match": "time_range"
+    },
+    {
+      "term": "手术日期",
+      "aliases": [
+        "手术记录日期"
+      ],
+      "target_type": "time_range",
+      "target": {
+        "table": "operation_record",
+        "column": "operation_date_time"
+      },
+      "source": "schema.time",
+      "confidence": "high",
+      "match": "time_range"
+    },
+    {
+      "term": "出生日期",
+      "aliases": [
+        "生日"
+      ],
+      "target_type": "time_range",
+      "target": {
+        "table": "patient",
+        "column": "birth_date"
+      },
+      "source": "schema.time",
+      "confidence": "high",
+      "match": "time_range"
+    },
     {
       "term": "门诊",
       "aliases": [
-        "门诊患者",
-        "门诊量"
+        "门诊患者"
       ],
       "target_type": "enum",
       "target": {
         "table": "visit",
         "column": "activity_type_code",
         "value": "1"
-      }
+      },
+      "source": "schema.enum",
+      "confidence": "high",
+      "match": "enum"
     },
     {
       "term": "急诊",
@@ -24,20 +339,154 @@
         "table": "visit",
         "column": "activity_type_code",
         "value": "2"
-      }
+      },
+      "source": "schema.enum",
+      "confidence": "high",
+      "match": "enum"
     },
     {
       "term": "住院",
       "aliases": [
-        "住院患者",
-        "住院量"
+        "住院患者"
       ],
       "target_type": "enum",
       "target": {
         "table": "visit",
         "column": "activity_type_code",
-        "value": "5"
-      }
+        "values": [
+          "5",
+          "6",
+          "9"
+        ]
+      },
+      "source": "schema.enum",
+      "confidence": "high",
+      "match": "in"
+    },
+    {
+      "term": "门急诊",
+      "aliases": [
+        "门急诊患者"
+      ],
+      "target_type": "enum",
+      "target": {
+        "table": "visit",
+        "column": "activity_type_code",
+        "values": [
+          "1",
+          "2"
+        ]
+      },
+      "source": "schema.enum",
+      "confidence": "high",
+      "match": "in"
+    },
+    {
+      "term": "男性",
+      "aliases": [
+        "男",
+        "男性患者"
+      ],
+      "target_type": "enum",
+      "target": {
+        "table": "patient",
+        "column": "sex_code",
+        "value": "1"
+      },
+      "source": "schema.enum",
+      "confidence": "high",
+      "match": "enum"
+    },
+    {
+      "term": "女性",
+      "aliases": [
+        "女",
+        "女性患者"
+      ],
+      "target_type": "enum",
+      "target": {
+        "table": "patient",
+        "column": "sex_code",
+        "value": "2"
+      },
+      "source": "schema.enum",
+      "confidence": "high",
+      "match": "enum"
+    },
+    {
+      "term": "一级手术",
+      "aliases": [
+        "一级手术例数"
+      ],
+      "target_type": "enum",
+      "target": {
+        "table": "operation_operation",
+        "column": "operation_level_code",
+        "value": "1"
+      },
+      "source": "schema.enum",
+      "confidence": "high",
+      "match": "enum"
+    },
+    {
+      "term": "二级手术",
+      "aliases": [
+        "二级手术例数"
+      ],
+      "target_type": "enum",
+      "target": {
+        "table": "operation_operation",
+        "column": "operation_level_code",
+        "value": "2"
+      },
+      "source": "schema.enum",
+      "confidence": "high",
+      "match": "enum"
+    },
+    {
+      "term": "三级手术",
+      "aliases": [
+        "三级手术例数"
+      ],
+      "target_type": "enum",
+      "target": {
+        "table": "operation_operation",
+        "column": "operation_level_code",
+        "value": "3"
+      },
+      "source": "schema.enum",
+      "confidence": "high",
+      "match": "enum"
+    },
+    {
+      "term": "四级手术",
+      "aliases": [
+        "四级手术例数"
+      ],
+      "target_type": "enum",
+      "target": {
+        "table": "operation_operation",
+        "column": "operation_level_code",
+        "value": "4"
+      },
+      "source": "schema.enum",
+      "confidence": "high",
+      "match": "enum"
+    },
+    {
+      "term": "择期手术",
+      "aliases": [
+        "择期"
+      ],
+      "target_type": "enum",
+      "target": {
+        "table": "operation_record",
+        "column": "operation_period_type_code",
+        "value": "1"
+      },
+      "source": "schema.enum",
+      "confidence": "high",
+      "match": "enum"
     },
     {
       "term": "医保",
@@ -45,11 +494,701 @@
         "医保患者",
         "医保结算"
       ],
-      "target_type": "column",
+      "target_type": "enum",
       "target": {
         "table": "medical_expense_rec",
-        "column": "medical_cost_pay_type_code"
-      }
+        "column": "medical_cost_pay_type_code",
+        "values": [
+          "01",
+          "02",
+          "03",
+          "09"
+        ]
+      },
+      "source": "schema.enum",
+      "confidence": "high",
+      "match": "in"
+    },
+    {
+      "term": "检查结果正常",
+      "aliases": [
+        "正常"
+      ],
+      "target_type": "enum",
+      "target": {
+        "table": "examination_exam",
+        "column": "qualitativeresults_code",
+        "value": "1"
+      },
+      "source": "schema.enum",
+      "confidence": "high",
+      "match": "enum"
+    },
+    {
+      "term": "检查结果异常",
+      "aliases": [
+        "异常"
+      ],
+      "target_type": "enum",
+      "target": {
+        "table": "examination_exam",
+        "column": "qualitativeresults_code",
+        "value": "2"
+      },
+      "source": "schema.enum",
+      "confidence": "high",
+      "match": "enum"
+    },
+    {
+      "term": "检查结果不确定",
+      "aliases": [
+        "不确定"
+      ],
+      "target_type": "enum",
+      "target": {
+        "table": "examination_exam",
+        "column": "qualitativeresults_code",
+        "value": "3"
+      },
+      "source": "schema.enum",
+      "confidence": "high",
+      "match": "enum"
+    },
+    {
+      "term": "药品收入",
+      "aliases": [
+        "药品费用"
+      ],
+      "target_type": "enum",
+      "target": {
+        "table": "advice_cost",
+        "column": "item_type_code",
+        "values": [
+          "1",
+          "2",
+          "3",
+          "11"
+        ]
+      },
+      "source": "excel_note",
+      "confidence": "high",
+      "match": "in"
+    },
+    {
+      "term": "检查收入",
+      "aliases": [
+        "检查费用"
+      ],
+      "target_type": "enum",
+      "target": {
+        "table": "advice_cost",
+        "column": "item_type_code",
+        "values": [
+          "5"
+        ]
+      },
+      "source": "excel_note",
+      "confidence": "high",
+      "match": "in"
+    },
+    {
+      "term": "检验收入",
+      "aliases": [
+        "检验费用"
+      ],
+      "target_type": "enum",
+      "target": {
+        "table": "advice_cost",
+        "column": "item_type_code",
+        "values": [
+          "4"
+        ]
+      },
+      "source": "excel_note",
+      "confidence": "high",
+      "match": "in"
+    },
+    {
+      "term": "治疗收入",
+      "aliases": [
+        "治疗费用"
+      ],
+      "target_type": "enum",
+      "target": {
+        "table": "advice_cost",
+        "column": "item_type_code",
+        "values": [
+          "7"
+        ]
+      },
+      "source": "excel_note",
+      "confidence": "high",
+      "match": "in"
+    },
+    {
+      "term": "手术收入",
+      "aliases": [
+        "手术费用"
+      ],
+      "target_type": "enum",
+      "target": {
+        "table": "advice_cost",
+        "column": "item_type_code",
+        "values": [
+          "6"
+        ]
+      },
+      "source": "excel_note",
+      "confidence": "high",
+      "match": "in"
+    },
+    {
+      "term": "材料收入",
+      "aliases": [
+        "材料费用"
+      ],
+      "target_type": "enum",
+      "target": {
+        "table": "advice_cost",
+        "column": "item_type_code",
+        "values": [
+          "10",
+          "12"
+        ]
+      },
+      "source": "excel_note",
+      "confidence": "high",
+      "match": "in"
+    },
+    {
+      "term": "科室",
+      "aliases": [
+        "科室名称"
+      ],
+      "target_type": "column",
+      "target": {
+        "table": "visit",
+        "column": "dept_name"
+      },
+      "source": "schema.column",
+      "confidence": "high",
+      "match": "contains"
+    },
+    {
+      "term": "医生",
+      "aliases": [
+        "医师"
+      ],
+      "target_type": "column",
+      "target": {
+        "table": "visit",
+        "column": "diagnose_doctor_name"
+      },
+      "source": "schema.column",
+      "confidence": "high",
+      "match": "contains"
+    },
+    {
+      "term": "性别",
+      "aliases": [],
+      "target_type": "column",
+      "target": {
+        "table": "patient",
+        "column": "sex_code"
+      },
+      "source": "schema.column",
+      "confidence": "high",
+      "match": "enum"
+    },
+    {
+      "term": "门诊人次",
+      "aliases": [
+        "门诊量",
+        "门诊就诊人次"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "outpatient_visits"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "急诊人次",
+      "aliases": [
+        "急诊量"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "emergency_visits"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "医保患者人次",
+      "aliases": [
+        "医保人次",
+        "参保患者人次"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "insured_visits"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "男性患者人次",
+      "aliases": [
+        "男性患者",
+        "男性门诊人次"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "male_patients"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "女性患者人次",
+      "aliases": [
+        "女性患者",
+        "女性门诊人次"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "female_visits"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "检查人次",
+      "aliases": [
+        "检查量",
+        "检查人数"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "examination_visits"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "检验人次",
+      "aliases": [
+        "检验量",
+        "检验人数"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "inspection_visits"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "门急诊总收入",
+      "aliases": [
+        "门急诊收入",
+        "总收入",
+        "门诊总收入"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "outpatient_total_revenue"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "门诊药品收入",
+      "aliases": [
+        "药品收入",
+        "门诊药费"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "outpatient_drug_revenue"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "门诊药品处方数",
+      "aliases": [
+        "处方数",
+        "药品处方数"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "outpatient_prescription_count"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "检查项目排名",
+      "aliases": [
+        "检查排名"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "examination_ranking"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "门诊费用排名",
+      "aliases": [
+        "费用排名"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "outpatient_cost_ranking"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "门急诊医保患者比例",
+      "aliases": [
+        "门急诊医保占比"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "outpatient_insured_ratio"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "门诊均次费用",
+      "aliases": [
+        "门诊次均费用",
+        "均次费用"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "outpatient_avg_cost"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "患者次均药费",
+      "aliases": [
+        "次均药费"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "patient_avg_drug_cost"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "门诊药占比",
+      "aliases": [
+        "药占比"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "outpatient_drug_ratio"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "住院人次",
+      "aliases": [
+        "住院量"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "hospitalization_visits"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "住院医保人次",
+      "aliases": [
+        "住院医保患者人次"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "inpatient_insured_visits"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "住院检查人次",
+      "aliases": [
+        "住院检查量"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "inpatient_examination_visits"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "住院检验人次",
+      "aliases": [
+        "住院检验量"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "inpatient_inspection_visits"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "住院总费用",
+      "aliases": [
+        "住院收入"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "inpatient_total_cost"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "住院药品费用",
+      "aliases": [
+        "住院药费"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "inpatient_drug_cost"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "住院医保患者费用",
+      "aliases": [
+        "住院医保费用"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "inpatient_insured_cost"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "住院医保患者药品费用",
+      "aliases": [
+        "住院医保药费"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "inpatient_insured_drug_cost"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "住院诊断排名",
+      "aliases": [
+        "诊断排名"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "inpatient_diagnosis_ranking"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "费用构成",
+      "aliases": [
+        "收入构成",
+        "费用结构"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "cost_composition"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "医保患者比例（住院）",
+      "aliases": [
+        "住院医保占比"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "inpatient_insured_ratio"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "住院次均费用",
+      "aliases": [
+        "住院次均"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "inpatient_avg_cost"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "总手术例数",
+      "aliases": [
+        "手术台次",
+        "手术量"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "total_surgeries"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "择期手术例数",
+      "aliases": [
+        "择期手术量"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "elective_surgeries"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "一级手术例数",
+      "aliases": [
+        "一级手术量"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "level1_surgeries"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "二级手术例数",
+      "aliases": [
+        "二级手术量"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "level2_surgeries"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "三级手术例数",
+      "aliases": [
+        "三级手术量"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "level3_surgeries"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "四级手术例数",
+      "aliases": [
+        "四级手术量"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "level4_surgeries"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    },
+    {
+      "term": "手术排名",
+      "aliases": [
+        "手术项目排名"
+      ],
+      "target_type": "metric",
+      "target": {
+        "metric_id": "surgery_ranking"
+      },
+      "source": "metrics",
+      "confidence": "high",
+      "match": "metric"
+    }
+  ],
+  "needs_value_dictionary": [
+    {
+      "table": "visit",
+      "column": "dept_name",
+      "reason": "科室具体名称"
+    },
+    {
+      "table": "diagnose_record",
+      "column": "diagnose_name",
+      "reason": "诊断名称"
+    },
+    {
+      "table": "examination_exam",
+      "column": "examination_item_name",
+      "reason": "检查项目名称"
+    },
+    {
+      "table": "medical_expense_rec",
+      "column": "medical_cost_pay_type_code",
+      "reason": "医保类型细分标签"
     }
   ]
 }

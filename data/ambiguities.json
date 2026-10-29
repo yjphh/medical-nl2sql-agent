@@ -1,13 +1,16 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "rules": [
     {
       "code": "time_range",
+      "category": "time",
       "trigger_terms": [
         "上个月",
         "本月",
         "最近",
-        "近"
+        "近",
+        "今年",
+        "去年"
       ],
       "question": "您说的『{term}』是指自然月还是最近30天？",
       "options": [
@@ -15,35 +18,220 @@
         "最近30天"
       ],
       "default": "自然月",
-      "blocking": true
+      "blocking": true,
+      "priority": 10,
+      "related_columns": [
+        "visit.treatment_occurrence_time",
+        "medical_expense_rec.settle_date_time",
+        "encounter_medical_cost.cost_date",
+        "advice_cost.cost_date"
+      ],
+      "related_metrics": []
+    },
+    {
+      "code": "time_field_scope",
+      "category": "time",
+      "trigger_terms": [
+        "住院",
+        "出院",
+        "结算",
+        "费用",
+        "检查",
+        "检验",
+        "手术"
+      ],
+      "question": "这个指标按哪个时间字段统计？",
+      "options": [
+        "就诊时间",
+        "入院时间",
+        "出院时间",
+        "结算时间",
+        "费用发生时间"
+      ],
+      "default": "按指标默认时间字段",
+      "blocking": true,
+      "priority": 20,
+      "related_columns": [
+        "visit.treatment_occurrence_time",
+        "visit.admission_date_time",
+        "visit.discharge_date_time",
+        "medical_expense_rec.settle_date_time",
+        "encounter_medical_cost.cost_date",
+        "advice_cost.cost_date",
+        "examination_record.execute_date",
+        "inspection_record.inspection_date",
+        "operation_operation.operation_start_date_time"
+      ],
+      "related_metrics": [
+        "hospitalization_visits",
+        "inpatient_total_cost",
+        "total_surgeries"
+      ]
     },
     {
       "code": "visit_type_scope",
+      "category": "entity",
       "trigger_terms": [
         "门诊人次",
-        "门急诊"
+        "门急诊",
+        "住院人次",
+        "门诊量"
       ],
-      "question": "门诊人次是只统计门诊，还是包含急诊？",
+      "question": "门诊人次是只统计门诊，还是包含急诊？住院是否包含 5/6/9 类型？",
       "options": [
         "仅门诊",
-        "门诊+急诊"
+        "门诊+急诊",
+        "住院(5/6/9)"
       ],
       "default": "仅门诊",
-      "blocking": true
+      "blocking": true,
+      "priority": 30,
+      "related_columns": [
+        "visit.activity_type_code"
+      ],
+      "related_metrics": [
+        "outpatient_visits",
+        "emergency_visits",
+        "hospitalization_visits"
+      ]
     },
     {
-      "code": "fee_type",
+      "code": "metric_scope",
+      "category": "metric",
       "trigger_terms": [
-        "总费用",
-        "收入"
+        "人次",
+        "人数",
+        "例数",
+        "费用",
+        "收入",
+        "次均",
+        "药占比"
       ],
-      "question": "您是指门急诊总收入，还是住院总收入？",
+      "question": "您要的是哪个指标口径？",
       "options": [
-        "门急诊",
-        "住院"
+        "人次",
+        "人数",
+        "例数",
+        "总收入",
+        "次均费用"
       ],
-      "default": "门急诊",
-      "blocking": true
+      "default": "按指标默认口径",
+      "blocking": true,
+      "priority": 40,
+      "related_columns": [],
+      "related_metrics": [
+        "outpatient_visits",
+        "outpatient_total_revenue",
+        "outpatient_avg_cost",
+        "inpatient_total_cost",
+        "inpatient_avg_cost"
+      ]
+    },
+    {
+      "code": "patient_scope",
+      "category": "patient",
+      "trigger_terms": [
+        "住院患者",
+        "出院",
+        "在院",
+        "患者范围"
+      ],
+      "question": "统计范围包括出院患者、在院患者，还是全部？",
+      "options": [
+        "出院患者",
+        "在院患者",
+        "全部"
+      ],
+      "default": "全部",
+      "blocking": true,
+      "priority": 50,
+      "related_columns": [
+        "visit.admission_date_time",
+        "visit.discharge_date_time",
+        "visit.visit_status_code"
+      ],
+      "related_metrics": [
+        "hospitalization_visits",
+        "inpatient_total_cost"
+      ]
+    },
+    {
+      "code": "department_entity",
+      "category": "entity",
+      "trigger_terms": [
+        "科室",
+        "心内科",
+        "外科",
+        "内科"
+      ],
+      "question": "科室是精确匹配，还是按名称包含？",
+      "options": [
+        "精确匹配",
+        "名称包含"
+      ],
+      "default": "名称包含",
+      "blocking": true,
+      "priority": 60,
+      "related_columns": [
+        "visit.dept_name",
+        "visit.dept_code"
+      ],
+      "related_metrics": []
+    },
+    {
+      "code": "aggregation",
+      "category": "metric",
+      "trigger_terms": [
+        "总量",
+        "合计",
+        "平均",
+        "排名",
+        "去重"
+      ],
+      "question": "您要总量、平均值、去重计数，还是排名？",
+      "options": [
+        "总量",
+        "平均值",
+        "去重计数",
+        "排名"
+      ],
+      "default": "按指标默认",
+      "blocking": true,
+      "priority": 70,
+      "related_columns": [],
+      "related_metrics": [
+        "examination_ranking",
+        "surgery_ranking",
+        "cost_composition"
+      ]
+    },
+    {
+      "code": "insurance_scope",
+      "category": "insurance",
+      "trigger_terms": [
+        "医保",
+        "职工医保",
+        "居民医保",
+        "医保患者"
+      ],
+      "question": "医保患者是全部医保，还是只算职工/居民医保？",
+      "options": [
+        "全部医保",
+        "职工医保",
+        "居民医保"
+      ],
+      "default": "全部医保",
+      "blocking": false,
+      "priority": 80,
+      "related_columns": [
+        "medical_expense_rec.medical_cost_pay_type_code",
+        "patient.ml_insurance_category_code"
+      ],
+      "related_metrics": [
+        "insured_visits",
+        "outpatient_insured_ratio",
+        "inpatient_insured_ratio"
+      ]
     }
   ]
 }

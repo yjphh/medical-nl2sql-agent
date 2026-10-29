@@ -1,41 +1,183 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "dialect": "sqlite",
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "examples": [
     {
-      "id": "ex_sqlite_outpatient_count",
-      "source_oracle_id": "ex_outpatient_count",
+      "id": "ex_sqlite_outpatient_visits",
+      "source_gold_id": "gold_outpatient_visits",
       "question": "统计2025年1月门诊人次",
+      "tables": [
+        "visit"
+      ],
+      "pattern": "filter+count_distinct",
       "sql": "SELECT COUNT(DISTINCT visit_id || id_card || treatment_occurrence_time) AS cnt FROM visit WHERE activity_type_code = '1' AND modify_flag IN ('1','2') AND treatment_occurrence_time >= '2025-01-01' AND treatment_occurrence_time < '2025-02-01'",
-      "tables": [
-        "visit"
-      ],
-      "pattern": "filter+count_distinct",
-      "notes": "按就诊发生日期；人次去重；日期列为 TEXT"
+      "notes": "按就诊发生日期；人次去重"
     },
     {
-      "id": "ex_sqlite_emergency_count",
-      "source_oracle_id": "ex_emergency_count",
+      "id": "ex_sqlite_emergency_visits",
+      "source_gold_id": "gold_emergency_visits",
       "question": "统计2025年1月急诊人次",
-      "sql": "SELECT COUNT(DISTINCT visit_id || id_card || treatment_occurrence_time) AS cnt FROM visit WHERE activity_type_code = '2' AND modify_flag IN ('1','2') AND treatment_occurrence_time >= '2025-01-01' AND treatment_occurrence_time < '2025-02-01'",
       "tables": [
         "visit"
       ],
       "pattern": "filter+count_distinct",
-      "notes": "按就诊发生日期；人次去重；日期列为 TEXT"
+      "sql": "SELECT COUNT(DISTINCT visit_id || id_card || treatment_occurrence_time) AS cnt FROM visit WHERE activity_type_code = '2' AND modify_flag IN ('1','2') AND treatment_occurrence_time >= '2025-01-01' AND treatment_occurrence_time < '2025-02-01'",
+      "notes": "按就诊发生日期；人次去重"
     },
     {
-      "id": "ex_sqlite_male_count",
-      "source_oracle_id": "ex_male_count",
-      "question": "统计2025年男性患者人次",
-      "sql": "SELECT COUNT(DISTINCT a.visit_id || a.id_card || a.treatment_occurrence_time) AS cnt FROM visit a LEFT JOIN patient b ON a.source_patient_id = b.source_patient_id WHERE a.modify_flag IN ('1','2') AND a.treatment_occurrence_time >= '2025-01-01' AND a.treatment_occurrence_time < '2026-01-01' AND b.sex_code = '1'",
+      "id": "ex_sqlite_insured_visits",
+      "source_gold_id": "gold_insured_visits",
+      "question": "统计2025年1月医保患者人次",
+      "tables": [
+        "visit",
+        "medical_expense_rec"
+      ],
+      "pattern": "exists+count_distinct",
+      "sql": "SELECT COUNT(DISTINCT v.visit_id || v.id_card || v.treatment_occurrence_time) AS cnt FROM visit v WHERE v.activity_type_code IN ('1','2') AND v.modify_flag IN ('1','2') AND v.treatment_occurrence_time >= '2025-01-01' AND v.treatment_occurrence_time < '2025-02-01' AND EXISTS (SELECT 1 FROM medical_expense_rec m WHERE m.visit_id = v.visit_id AND m.medical_cost_pay_type_code IN ('01','02','03','09') AND m.modify_flag IN ('1','2'))",
+      "notes": "医保代码 01/02/03/09；门诊+急诊"
+    },
+    {
+      "id": "ex_sqlite_male_patients",
+      "source_gold_id": "gold_male_patients",
+      "question": "统计2025年1月男性患者人次",
       "tables": [
         "visit",
         "patient"
       ],
       "pattern": "join+filter+count_distinct",
-      "notes": "关联 patient 表查性别；日期列为 TEXT"
+      "sql": "SELECT COUNT(DISTINCT v.visit_id || v.id_card || v.treatment_occurrence_time) AS cnt FROM visit v JOIN patient p ON p.source_patient_id = v.source_patient_id WHERE v.activity_type_code IN ('1','2') AND p.sex_code = '1' AND v.modify_flag IN ('1','2') AND p.modify_flag IN ('1','2') AND v.treatment_occurrence_time >= '2025-01-01' AND v.treatment_occurrence_time < '2025-02-01'",
+      "notes": "性别代码 1=男；join 患者"
+    },
+    {
+      "id": "ex_sqlite_outpatient_total_revenue",
+      "source_gold_id": "gold_outpatient_total_revenue",
+      "question": "统计2025年1月门急诊总收入",
+      "tables": [
+        "medical_expense_rec"
+      ],
+      "pattern": "sum",
+      "sql": "SELECT IFNULL(SUM(outpatient_cost), 0) AS total FROM medical_expense_rec WHERE modify_flag IN ('1','2') AND settle_date_time >= '2025-01-01' AND settle_date_time < '2025-02-01'",
+      "notes": "按结算日期；空值按0"
+    },
+    {
+      "id": "ex_sqlite_outpatient_drug_revenue",
+      "source_gold_id": "gold_outpatient_drug_revenue",
+      "question": "统计2025年1月门诊药品收入",
+      "tables": [
+        "encounter_medical_cost"
+      ],
+      "pattern": "filter+sum",
+      "sql": "SELECT IFNULL(SUM(total_cost), 0) AS total FROM encounter_medical_cost WHERE modify_flag IN ('1','2') AND item_type IN ('1','2','3','11') AND patient_type_code IN ('01','02') AND cost_date >= '2025-01-01' AND cost_date < '2025-02-01'",
+      "notes": "药品项目类型 1/2/3/11；按费用日期"
+    },
+    {
+      "id": "ex_sqlite_outpatient_prescription_count",
+      "source_gold_id": "gold_outpatient_prescription_count",
+      "question": "统计2025年1月门诊药品处方数",
+      "tables": [
+        "prescription_record"
+      ],
+      "pattern": "filter+count",
+      "sql": "SELECT COUNT(1) AS cnt FROM prescription_record WHERE modify_flag IN ('1','2') AND prescription_date >= '2025-01-01' AND prescription_date < '2025-02-01'",
+      "notes": "按处方日期计数"
+    },
+    {
+      "id": "ex_sqlite_examination_visits",
+      "source_gold_id": "gold_examination_visits",
+      "question": "统计2025年1月门诊检查人次",
+      "tables": [
+        "visit",
+        "examination_record"
+      ],
+      "pattern": "join+filter+count_distinct",
+      "sql": "SELECT COUNT(DISTINCT r.dcid) AS cnt FROM examination_record r JOIN visit v ON v.visit_id = r.visit_id WHERE r.modify_flag IN ('1','2') AND v.activity_type_code IN ('1','2') AND r.execute_date >= '2025-01-01' AND r.execute_date < '2025-02-01'",
+      "notes": "按检查日期；检查记录去重"
+    },
+    {
+      "id": "ex_sqlite_examination_ranking",
+      "source_gold_id": "gold_examination_ranking",
+      "question": "2025年1月检查项目排名前10",
+      "tables": [
+        "examination_exam",
+        "examination_record",
+        "visit"
+      ],
+      "pattern": "join+group+rank",
+      "sql": "SELECT e.examination_item_code, e.examination_item_name, COUNT(1) AS cnt FROM examination_record r JOIN examination_exam e ON r.dcid = e.dcid JOIN visit v ON v.visit_id = r.visit_id WHERE r.modify_flag IN ('1','2') AND e.modify_flag IN ('1','2') AND v.activity_type_code IN ('1','2') AND r.execute_date >= '2025-01-01' AND r.execute_date < '2025-02-01' GROUP BY e.examination_item_code, e.examination_item_name ORDER BY cnt DESC LIMIT 10",
+      "notes": "检查记录 join 检查项目；按项目计数"
+    },
+    {
+      "id": "ex_sqlite_hospitalization_visits",
+      "source_gold_id": "gold_hospitalization_visits",
+      "question": "统计2025年1月住院人次",
+      "tables": [
+        "visit"
+      ],
+      "pattern": "filter+count_distinct",
+      "sql": "SELECT COUNT(DISTINCT visit_id || id_card || treatment_occurrence_time) AS cnt FROM visit WHERE activity_type_code IN ('5','6','9') AND modify_flag IN ('1','2') AND treatment_occurrence_time >= '2025-01-01' AND treatment_occurrence_time < '2025-02-01'",
+      "notes": "住院类型 5/6/9"
+    },
+    {
+      "id": "ex_sqlite_inpatient_total_cost",
+      "source_gold_id": "gold_inpatient_total_cost",
+      "question": "统计2025年1月住院总费用",
+      "tables": [
+        "medical_expense_rec"
+      ],
+      "pattern": "sum",
+      "sql": "SELECT IFNULL(SUM(hospitalization_total_cost), 0) AS total FROM medical_expense_rec WHERE modify_flag IN ('1','2') AND settle_date_time >= '2025-01-01' AND settle_date_time < '2025-02-01'",
+      "notes": "按结算日期；空值按0"
+    },
+    {
+      "id": "ex_sqlite_cost_composition",
+      "source_gold_id": "gold_cost_composition",
+      "question": "2025年1月住院费用构成",
+      "tables": [
+        "advice_cost",
+        "qmjk_dict"
+      ],
+      "pattern": "group+sum",
+      "sql": "SELECT a.item_type_code, IFNULL(SUM(a.total_cost), 0) AS total FROM advice_cost a WHERE a.modify_flag IN ('1','2') AND a.cost_date >= '2025-01-01' AND a.cost_date < '2025-02-01' GROUP BY a.item_type_code ORDER BY total DESC",
+      "notes": "按费用项目类型汇总"
+    },
+    {
+      "id": "ex_sqlite_total_surgeries",
+      "source_gold_id": "gold_total_surgeries",
+      "question": "统计2025年1月总手术例数",
+      "tables": [
+        "operation_record",
+        "operation_operation"
+      ],
+      "pattern": "join+filter+count_distinct",
+      "sql": "SELECT COUNT(DISTINCT o.docid) AS cnt FROM operation_record r JOIN operation_operation o ON r.dcid = o.dcid WHERE r.modify_flag IN ('1','2') AND o.modify_flag IN ('1','2') AND o.operation_level_code IN ('1','2','3','4') AND o.operation_start_date_time >= '2025-01-01' AND o.operation_start_date_time < '2025-02-01'",
+      "notes": "手术级别 1-4；手术操作去重"
+    },
+    {
+      "id": "ex_sqlite_surgery_ranking",
+      "source_gold_id": "gold_surgery_ranking",
+      "question": "2025年1月手术排名前10",
+      "tables": [
+        "operation_record",
+        "operation_operation",
+        "qmjk_dict"
+      ],
+      "pattern": "join+group+rank",
+      "sql": "SELECT o.operation_code, IFNULL(q.dict_label, o.operation_name) AS item_name, COUNT(1) AS cnt FROM operation_record r JOIN operation_operation o ON r.dcid = o.dcid LEFT JOIN qmjk_dict q ON q.dict_code = o.operation_code WHERE r.modify_flag IN ('1','2') AND o.modify_flag IN ('1','2') AND o.operation_level_code IN ('1','2','3','4') AND o.operation_start_date_time >= '2025-01-01' AND o.operation_start_date_time < '2025-02-01' GROUP BY o.operation_code, IFNULL(q.dict_label, o.operation_name) ORDER BY cnt DESC LIMIT 10",
+      "notes": "按手术编码分组；字典名称可选"
+    },
+    {
+      "id": "ex_sqlite_inpatient_diagnosis_ranking",
+      "source_gold_id": "gold_inpatient_diagnosis_ranking",
+      "question": "2025年1月住院诊断排名前10",
+      "tables": [
+        "diagnose_record",
+        "qmjk_dict",
+        "visit"
+      ],
+      "pattern": "join+group+rank",
+      "sql": "SELECT d.diagnose_code, IFNULL(q.dict_label, d.diagnose_name) AS item_name, COUNT(1) AS cnt FROM diagnose_record d JOIN visit v ON v.visit_id = d.visit_id LEFT JOIN qmjk_dict q ON q.dict_type = 'ICD-10' AND q.dict_code = d.diagnose_code WHERE d.modify_flag IN ('1','2') AND v.activity_type_code IN ('5','6','9') AND d.diag_n_osis_date >= '2025-01-01' AND d.diag_n_osis_date < '2025-02-01' GROUP BY d.diagnose_code, IFNULL(q.dict_label, d.diagnose_name) ORDER BY cnt DESC LIMIT 10",
+      "notes": "住院诊断；字典类型 ICD-10"
     }
   ]
 }

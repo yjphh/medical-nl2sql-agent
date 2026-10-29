@@ -1,266 +1,417 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "dialect": "oracle",
   "items": [
     {
-      "id": "gold_m_4f35e0",
-      "metric_id": "m_4f35e0",
+      "id": "gold_outpatient_visits",
+      "metric_id": "outpatient_visits",
       "metric_name": "门诊人次",
       "kind": "sql",
       "sql": "select sum(indicatorValue)\nfrom (with tmp as (select to_char(treatment_occurrence_time, 'yyyy-mm-dd')                                      as indicatorDate,\n                          count(distinct case activity_type_code\n                                             when '1'\n                                                 then concat(visit_id, id_card, treatment_occurrence_time) end) as outpatient_cnt,\n                          count(distinct case activity_type_code\n                                             when '2'\n                                                 then concat(visit_id, id_card, treatment_occurrence_time) end) as emergency_cnt,\n                          count(distinct case\n                                             when activity_type_code in ('5', '6', '9')\n                                                 then concat(visit_id, id_card, treatment_occurrence_time) end) as hospitalization_cnt\n                   from visit a\n                   where a.modify_flag in ('1', '2')\n                     and to_char(treatment_occurrence_time, 'yyyy-mm-dd') >= '2025-01-01'\n                     and to_char(treatment_occurrence_time, 'yyyy-mm-dd') < current_date\n                   group by to_char(treatment_occurrence_time, 'yyyy-mm-dd')\n                   order by to_char(treatment_occurrence_time, 'yyyy-mm-dd'))\n      select 'outpatient_cnt' as indicatorCode, indicatorDate, outpatient_cnt as indicatorValue\n      from tmp\n      where outpatient_cnt > 0\n      union all\n      select 'emergency_cnt' as indicatorCode, indicatorDate, emergency_cnt as indicatorValue\n      from tmp\n      where emergency_cnt > 0\n      union all\n      select 'hospitalization_cnt' as indicatorCode, indicatorDate, hospitalization_cnt as indicatorValue\n      from tmp\n      where hospitalization_cnt > 0\n) a\nwhere indicatorCode = 'outpatient_cnt';",
-      "tables": [],
+      "tables": [
+        "visit"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_a67e0f",
-      "metric_id": "m_a67e0f",
+      "id": "gold_emergency_visits",
+      "metric_id": "emergency_visits",
       "metric_name": "急诊人次",
       "kind": "sql",
       "sql": "select sum(indicatorValue)\nfrom (with tmp as (select to_char(treatment_occurrence_time, 'yyyy-mm-dd')                                      as indicatorDate,\n                          count(distinct case activity_type_code\n                                             when '1'\n                                                 then concat(visit_id, id_card, treatment_occurrence_time) end) as outpatient_cnt,\n                          count(distinct case activity_type_code\n                                             when '2'\n                                                 then concat(visit_id, id_card, treatment_occurrence_time) end) as emergency_cnt,\n                          count(distinct case\n                                             when activity_type_code in ('5', '6', '9')\n                                                 then concat(visit_id, id_card, treatment_occurrence_time) end) as hospitalization_cnt\n                   from visit a\n                   where a.modify_flag in ('1', '2')\n                     and to_char(treatment_occurrence_time, 'yyyy-mm-dd') >= '2025-01-01'\n                     and to_char(treatment_occurrence_time, 'yyyy-mm-dd') < current_date\n                   group by to_char(treatment_occurrence_time, 'yyyy-mm-dd')\n                   order by to_char(treatment_occurrence_time, 'yyyy-mm-dd'))\n      select 'outpatient_cnt' as indicatorCode, indicatorDate, outpatient_cnt as indicatorValue\n      from tmp\n      where outpatient_cnt > 0\n      union all\n      select 'emergency_cnt' as indicatorCode, indicatorDate, emergency_cnt as indicatorValue\n      from tmp\n      where emergency_cnt > 0\n      union all\n      select 'hospitalization_cnt' as indicatorCode, indicatorDate, hospitalization_cnt as indicatorValue\n      from tmp\n      where hospitalization_cnt > 0\n) a\nwhere indicatorCode = 'emergency_cnt';",
-      "tables": [],
+      "tables": [
+        "visit"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_b24fa3",
-      "metric_id": "m_b24fa3",
+      "id": "gold_insured_visits",
+      "metric_id": "insured_visits",
       "metric_name": "医保患者人次",
       "kind": "sql",
       "sql": "select sum(indicatorValue)\nfrom (SELECT TO_CHAR(treatment_occurrence_time, 'YYYY-MM-DD')                                  AS indicatorDate,\n             COUNT(DISTINCT CASE\n                                WHEN activity_type_code IN ('1', '2')\n                                    THEN visit_id || a.id_card ||\n                                         TO_CHAR(treatment_occurrence_time, 'YYYY-MM-DD') END) AS indicatorValue\n      FROM visit a\n      WHERE a.modify_flag IN ('1', '2')\n        AND EXISTS (SELECT 1\n                    FROM medical_expense_rec rec\n                    WHERE rec.medical_cost_pay_type_code IN ('01', '02', '03', '09')\n                      AND a.visit_id = rec.visit_id)\n        AND treatment_occurrence_time >= '2025-01-01'\n        AND treatment_occurrence_time < CURRENT_DATE\n      GROUP BY TO_CHAR(treatment_occurrence_time, 'YYYY-MM-DD')\n      ORDER BY indicatorDate) a;",
-      "tables": [],
+      "tables": [
+        "medical_expense_rec",
+        "visit"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_9214cc",
-      "metric_id": "m_9214cc",
+      "id": "gold_male_patients",
+      "metric_id": "male_patients",
       "metric_name": "男性患者人次",
       "kind": "sql",
       "sql": "select sum(indicatorValue) from (SELECT TO_CHAR(treatment_occurrence_time, 'YYYY-MM-DD') AS indicatorDate,\n                                        COUNT(DISTINCT\n                                              CASE\n                                                  WHEN activity_type_code IN ('1', '2')\n                                                      THEN a.visit_id || a.id_card ||\n                                                           TO_CHAR(treatment_occurrence_time, 'YYYY-MM-DD')\n                                                  END\n                                        )                                                AS indicatorValue\n                                 FROM visit a\n                                          LEFT JOIN patient b\n                                                    ON a.source_patient_id = b.source_patient_id\n                                 WHERE a.modify_flag IN ('1', '2')\n                                   AND treatment_occurrence_time >= DATE '2025-01-01'\n                                   AND b.sex_code = '1'\n                                   AND treatment_occurrence_time < CURRENT_DATE\n                                 GROUP BY TO_CHAR(treatment_occurrence_time, 'YYYY-MM-DD')\n                                 ORDER BY TO_CHAR(treatment_occurrence_time, 'YYYY-MM-DD')) a",
-      "tables": [],
+      "tables": [
+        "patient",
+        "visit"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_91427d",
-      "metric_id": "m_91427d",
+      "id": "gold_female_visits",
+      "metric_id": "female_visits",
       "metric_name": "女性患者人次",
       "kind": "sql",
       "sql": "select sum(indicatorValue) from (SELECT TO_CHAR(treatment_occurrence_time, 'YYYY-MM-DD') AS indicatorDate,\n                                        COUNT(DISTINCT\n                                              CASE\n                                                  WHEN activity_type_code IN ('1', '2')\n                                                      THEN a.visit_id || a.id_card ||\n                                                           TO_CHAR(treatment_occurrence_time, 'YYYY-MM-DD')\n                                                  END\n                                        )                                                AS indicatorValue\n                                 FROM visit a\n                                          LEFT JOIN patient b\n                                                    ON a.source_patient_id = b.source_patient_id\n                                 WHERE a.modify_flag IN ('1', '2')\n                                   AND treatment_occurrence_time >= DATE '2025-01-01'\n                                   AND b.sex_code = '2'\n                                   AND treatment_occurrence_time < CURRENT_DATE\n                                 GROUP BY TO_CHAR(treatment_occurrence_time, 'YYYY-MM-DD')\n                                 ORDER BY TO_CHAR(treatment_occurrence_time, 'YYYY-MM-DD')) a",
-      "tables": [],
+      "tables": [
+        "patient",
+        "visit"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_4b8832",
-      "metric_id": "m_4b8832",
+      "id": "gold_examination_visits",
+      "metric_id": "examination_visits",
       "metric_name": "检查人次",
       "kind": "sql",
       "sql": "select sum(indicatorValue) from (\n                                    SELECT\n                                        TO_CHAR(visit_date_time, 'YYYY-MM-DD') AS indicatorDate,\n                                        COUNT(DISTINCT a.id_card || a.visit_id || TO_CHAR(a.execute_date, 'YYYY-MM-DD')) AS indicatorValue\n                                    FROM examination_record a\n                                             LEFT JOIN visit vs ON vs.visit_id = a.visit_id\n                                    WHERE\n                                        a.modify_flag IN ('1', '2')\n                                      AND EXISTS (\n                                        SELECT 1 FROM visit v\n                                        WHERE v.modify_flag IN ('1', '2')\n                                          AND v.visit_id = a.visit_id\n                                          AND v.activity_type_code IN ('1', '2')\n                                    )\n                                      AND visit_date_time >= DATE '2025-01-01'\n                                      AND visit_date_time < CURRENT_DATE\n                                    GROUP BY TO_CHAR(visit_date_time, 'YYYY-MM-DD')\n                                    ORDER BY TO_CHAR(visit_date_time, 'YYYY-MM-DD')\n) a;",
-      "tables": [],
+      "tables": [
+        "examination_record",
+        "visit"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_9f8167",
-      "metric_id": "m_9f8167",
+      "id": "gold_inspection_visits",
+      "metric_id": "inspection_visits",
       "metric_name": "检验人次",
       "kind": "sql",
       "sql": "select sum(indicatorValue) from (\n                                    SELECT\n                                        TO_CHAR(inspection_date, 'YYYY-MM-DD') AS indicatorDate,\n                                        COUNT(DISTINCT a.id_card || a.visit_id || TO_CHAR(inspection_date, 'YYYY-MM-DD')) AS indicatorValue\n                                    FROM inspection_record a\n                                             LEFT JOIN visit vs ON a.visit_id = vs.visit_id\n                                    WHERE\n                                        EXISTS (\n                                            SELECT 1\n                                            FROM visit v  -- 修正schema名称，移除internal.前缀（假设为笔误）\n                                            WHERE v.modify_flag IN ('1', '2')\n                                              AND v.activity_type_code IN ('1', '2')\n                                              AND v.visit_id = a.visit_id\n                                        )\n                                      AND a.modify_flag IN ('1', '2')\n                                      AND inspection_date >= DATE '2025-01-01'\n                                      AND inspection_date < CURRENT_DATE\n                                    GROUP BY TO_CHAR(inspection_date, 'YYYY-MM-DD')\n                                    ORDER BY TO_CHAR(inspection_date, 'YYYY-MM-DD')\n) a;",
-      "tables": [],
+      "tables": [
+        "inspection_record",
+        "visit"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_63edef",
-      "metric_id": "m_63edef",
+      "id": "gold_outpatient_total_revenue",
+      "metric_id": "outpatient_total_revenue",
       "metric_name": "门急诊总收入",
       "kind": "sql",
       "sql": "select sum(indicatorValue) from (\n                                    with tmp as (\n                                        select to_char(a.settle_date_time, 'yyyy-mm-dd')             as indicatorDate,\n                                               sum(nvl(a.outpatient_cost, 0))                        as outpatient_cost,\n                                               sum(nvl(a.outpatient_cost, 0)) -\n                                               nvl((sum(case\n                                                            when a.medical_cost_pay_type_code in ('01', '02', '03')\n                                                                then nvl(personal_cost, 0) end)), 0) as outpatient_insurance_cost\n                                        from medical_expense_rec a\n                                        where modify_flag in ('1', '2')\n                                          and to_char(a.settle_date_time, 'yyyy-mm-dd') >= '2025-01-01'\n                                          and to_char(a.settle_date_time, 'yyyy-mm-dd') < current_date\n                                        group by to_char(a.settle_date_time, 'yyyy-mm-dd')\n                                    )\n                                    select 'outpatient_cost' as indicatorCode,indicatorDate,outpatient_cost as indicatorValue from tmp where outpatient_cost > 0\n) a;",
-      "tables": [],
+      "tables": [
+        "medical_expense_rec"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_f453e1",
-      "metric_id": "m_f453e1",
+      "id": "gold_outpatient_drug_revenue",
+      "metric_id": "outpatient_drug_revenue",
       "metric_name": "门诊药品收入",
       "kind": "sql",
       "sql": "select sum(indicatorValue) from (\n                                    SELECT\n                                        TO_CHAR(cost_date, 'YYYY-MM-DD') AS indicatorDate,\n                                        COALESCE(\n                                                SUM(\n                                                        CASE\n                                                            WHEN item_type IN ('1', '2', '3', '11')\n                                                                AND patient_type_code IN ('01', '02')\n                                                                THEN total_cost\n                                                            END\n                                                ),\n                                                0\n                                        ) AS indicatorValue\n                                    FROM encounter_medical_cost a\n                                    WHERE a.modify_flag IN ('1', '2')\n                                      AND cost_date >= DATE '2025-01-01'\n                                      AND cost_date < CURRENT_DATE\n                                    GROUP BY TO_CHAR(cost_date, 'YYYY-MM-DD')\n                                    ORDER BY TO_CHAR(cost_date, 'YYYY-MM-DD')\n) a;",
-      "tables": [],
+      "tables": [
+        "encounter_medical_cost"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_5835ae",
-      "metric_id": "m_5835ae",
+      "id": "gold_outpatient_prescription_count",
+      "metric_id": "outpatient_prescription_count",
       "metric_name": "门诊药品处方数",
       "kind": "sql",
       "sql": "select sum(indicatorValue) from (\n                                    SELECT\n                                        TO_CHAR(prescription_date, 'YYYY-MM-DD') AS indicatorDate,\n                                        COUNT(1) AS indicatorValue\n                                    FROM prescription_record a\n                                    WHERE a.modify_flag IN ('1', '2')\n                                      AND prescription_date >= DATE '2025-01-01'\n                                      AND prescription_date < CURRENT_DATE\n                                    GROUP BY TO_CHAR(prescription_date, 'YYYY-MM-DD')\n                                    ORDER BY TO_CHAR(prescription_date, 'YYYY-MM-DD')\n) a;",
-      "tables": [],
+      "tables": [
+        "prescription_record"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_e033bf",
-      "metric_id": "m_e033bf",
+      "id": "gold_examination_ranking",
+      "metric_id": "examination_ranking",
       "metric_name": "检查项目排名",
       "kind": "sql",
       "sql": "select\n    a.itemCode as itemCode,\n    a.itemName as itemName,\n    sum(a.itemValue) as cnt\nfrom (\n        select to_char(execute_date, 'yyyy-mm-dd') as indicatorDate,\n             examination_item_code               as itemCode,\n             examination_item_name               as itemName,\n             count(1)                            as itemValue\n        from examination_record a\n               left join examination_exam b on a.dcid = b.dcid and b.modify_flag in ('1', '2')\n        where a.modify_flag in ('1', '2')\n        and to_char(execute_date, 'yyyy-mm-dd') >= '2025-01-01'\n        and to_char(execute_date, 'yyyy-mm-dd') < current_date\n        and exists(select 1 from visit b where a.visit_id = b.visit_id and b.activity_type_code IN ('1', '2'))\n        group by to_char(execute_date, 'yyyy-mm-dd'), examination_item_code, examination_item_name\n        order by to_char(execute_date, 'yyyy-mm-dd')\n) a\ngroup by a.itemCode,a.itemName\norder by cnt desc;",
-      "tables": [],
+      "tables": [
+        "examination_exam",
+        "examination_record",
+        "visit"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_78fe2b",
-      "metric_id": "m_78fe2b",
+      "id": "gold_outpatient_cost_ranking",
+      "metric_id": "outpatient_cost_ranking",
       "metric_name": "门诊费用排名",
       "kind": "sql",
       "sql": "select\n    a.itemCode as itemCode,\n    a.itemName as itemName,\n    sum(a.itemValue) as cnt\nfrom (\n         SELECT\n             TO_CHAR(a.charging_date, 'YYYY-MM-DD') AS indicatorDate,\n             a.item_type AS itemCode,\n             b.dict_label AS itemName,\n             SUM(a.total_cost) AS itemValue\n         FROM encounter_medical_cost AS a\n                  LEFT JOIN qmjk_dict b ON a.item_type = b.dict_code\n         WHERE a.modify_flag IN ('1', '2')\n           AND a.item_type IS NOT NULL\n           AND a.item_type <> ''\n           AND a.item_name <> ''\n           AND a.item_name <> '-'\n           AND a.charging_date >= DATE '2025-01-01'\n           AND a.charging_date < CURRENT_DATE\n           AND b.dict_type = 'CC63_12_001_06'\n         GROUP BY\n             TO_CHAR(a.charging_date, 'YYYY-MM-DD'),\n             a.item_type,\n             b.dict_label\n         ORDER BY\n             TO_CHAR(a.charging_date, 'YYYY-MM-DD')\n) a\ngroup by a.itemCode,a.itemName\norder by cnt desc;",
-      "tables": [],
+      "tables": [
+        "encounter_medical_cost",
+        "qmjk_dict"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_30a5e5",
-      "metric_id": "m_30a5e5",
+      "id": "gold_formula_outpatient_insured_ratio",
+      "metric_id": "outpatient_insured_ratio",
+      "metric_name": "门急诊医保患者比例",
+      "kind": "formula",
+      "formula": "医保患者人次 / (门诊人次 + 急诊人次) * 100%",
+      "tables": [
+        "visit",
+        "medical_expense_rec"
+      ],
+      "notes": "公式指标，无可执行 SQL"
+    },
+    {
+      "id": "gold_formula_outpatient_avg_cost",
+      "metric_id": "outpatient_avg_cost",
+      "metric_name": "门诊均次费用",
+      "kind": "formula",
+      "formula": "门急诊总收入 / (门诊人次 + 急诊人次)",
+      "tables": [
+        "visit",
+        "medical_expense_rec"
+      ],
+      "notes": "公式指标，无可执行 SQL"
+    },
+    {
+      "id": "gold_formula_patient_avg_drug_cost",
+      "metric_id": "patient_avg_drug_cost",
+      "metric_name": "患者次均药费",
+      "kind": "formula",
+      "formula": "门诊药品收入 / (门诊人次 + 急诊人次)",
+      "tables": [
+        "visit",
+        "encounter_medical_cost"
+      ],
+      "notes": "公式指标，无可执行 SQL"
+    },
+    {
+      "id": "gold_formula_outpatient_drug_ratio",
+      "metric_id": "outpatient_drug_ratio",
+      "metric_name": "门诊药占比",
+      "kind": "formula",
+      "formula": "门诊药品收入 / 门急诊总收入 * 100%",
+      "tables": [
+        "encounter_medical_cost"
+      ],
+      "notes": "公式指标，无可执行 SQL"
+    },
+    {
+      "id": "gold_hospitalization_visits",
+      "metric_id": "hospitalization_visits",
       "metric_name": "住院人次",
       "kind": "sql",
       "sql": "select sum(indicatorValue)\nfrom (with tmp as (select to_char(treatment_occurrence_time, 'yyyy-mm-dd')                                      as indicatorDate,\n                          count(distinct case activity_type_code\n                                             when '1'\n                                                 then concat(visit_id, id_card, treatment_occurrence_time) end) as outpatient_cnt,\n                          count(distinct case activity_type_code\n                                             when '2'\n                                                 then concat(visit_id, id_card, treatment_occurrence_time) end) as emergency_cnt,\n                          count(distinct case\n                                             when activity_type_code in ('5', '6', '9')\n                                                 then concat(visit_id, id_card, treatment_occurrence_time) end) as hospitalization_cnt\n                   from visit a\n                   where a.modify_flag in ('1', '2')\n                     and to_char(treatment_occurrence_time, 'yyyy-mm-dd') >= '2025-01-01'\n                     and to_char(treatment_occurrence_time, 'yyyy-mm-dd') < current_date\n                   group by to_char(treatment_occurrence_time, 'yyyy-mm-dd')\n                   order by to_char(treatment_occurrence_time, 'yyyy-mm-dd'))\n      select 'outpatient_cnt' as indicatorCode, indicatorDate, outpatient_cnt as indicatorValue\n      from tmp\n      where outpatient_cnt > 0\n      union all\n      select 'emergency_cnt' as indicatorCode, indicatorDate, emergency_cnt as indicatorValue\n      from tmp\n      where emergency_cnt > 0\n      union all\n      select 'hospitalization_cnt' as indicatorCode, indicatorDate, hospitalization_cnt as indicatorValue\n      from tmp\n      where hospitalization_cnt > 0\n) a\nwhere indicatorCode = 'hospitalization_cnt';",
-      "tables": [],
+      "tables": [
+        "visit"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_f96aab",
-      "metric_id": "m_f96aab",
+      "id": "gold_inpatient_insured_visits",
+      "metric_id": "inpatient_insured_visits",
       "metric_name": "住院医保人次",
       "kind": "sql",
       "sql": "select sum(indicatorValue)\nfrom (\n         select to_char(treatment_occurrence_time, 'yyyy-mm-dd')                                      as indicatorDate,\n                count(distinct case\n                                   when activity_type_code in ('5', '6', '9')\n                                       then concat(visit_id, id_card, treatment_occurrence_time) end) as indicatorValue\n         from visit a\n         where a.modify_flag in ('1', '2')\n           and to_char(treatment_occurrence_time, 'yyyy-mm-dd') >= '2025-01-01'\n           and to_char(treatment_occurrence_time, 'yyyy-mm-dd') < current_date\n           and exists(select 1\n                      from medical_expense_rec b\n                      where medical_cost_pay_type_code in ('01', '02', '03', '09')\n                        and a.visit_id = b.visit_id)\n         group by to_char(treatment_occurrence_time, 'yyyy-mm-dd')\n         order by to_char(treatment_occurrence_time, 'yyyy-mm-dd')\n) a;",
-      "tables": [],
+      "tables": [
+        "medical_expense_rec",
+        "visit"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_0a5247",
-      "metric_id": "m_0a5247",
+      "id": "gold_inpatient_examination_visits",
+      "metric_id": "inpatient_examination_visits",
       "metric_name": "住院检查人次",
       "kind": "sql",
       "sql": "select sum(indicatorValue)\nfrom (\n         select to_char(execute_date, 'yyyy-mm-dd') as indicatorDate, count(distinct concat(id_card, visit_id, execute_date)) as indicatorValue\n         from examination_record a\n         where a.modify_flag in ('1', '2')\n           and exists(select 1 from visit where modify_flag in ('1', '2') and visit_id = a.visit_id and activity_type_code in ('5', '6', '9'))\n           and to_char(execute_date, 'yyyy-mm-dd') >= '2025-01-01'\n           and to_char(execute_date, 'yyyy-mm-dd') < current_date\n         group by to_char(execute_date, 'yyyy-mm-dd')\n         order by to_char(execute_date, 'yyyy-mm-dd')\n) a;",
-      "tables": [],
+      "tables": [
+        "examination_record",
+        "visit"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_7a1774",
-      "metric_id": "m_7a1774",
+      "id": "gold_inpatient_inspection_visits",
+      "metric_id": "inpatient_inspection_visits",
       "metric_name": "住院检验人次",
       "kind": "sql",
       "sql": "select sum(indicatorValue)\nfrom (\n         select to_char(inspection_date, 'yyyy-mm-dd') as indicatorDate, count(distinct concat(id_card, visit_id, inspection_date)) as indicatorValue\n         from inspection_record a\n         where a.modify_flag in ('1', '2')\n           and a.activity_type_code in ('5', '6', '9')\n           and exists(select 1 from visit where modify_flag in ('1', '2') and visit_id = a.visit_id)\n           and to_char(inspection_date, 'yyyy-mm-dd') >= '2025-01-01'\n           and to_char(inspection_date, 'yyyy-mm-dd') < current_date\n         group by to_char(inspection_date, 'yyyy-mm-dd')\n         order by to_char(inspection_date, 'yyyy-mm-dd')\n) a;",
-      "tables": [],
+      "tables": [
+        "inspection_record",
+        "visit"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_dc3de2",
-      "metric_id": "m_dc3de2",
+      "id": "gold_inpatient_total_cost",
+      "metric_id": "inpatient_total_cost",
       "metric_name": "住院总费用",
       "kind": "sql",
       "sql": "select sum(indicatorValue)\nfrom (\n         with tmp as (\n             select to_char(a.settle_date_time, 'yyyy-mm-dd')             as indicatorDate,\n                    sum(nvl(a.hospization_total_cost, 0))                 as hospitalization_cost,\n                    nvl((sum(case when a.medical_cost_pay_type_code in ('01', '02', '03', '09') then nvl(a.hospization_total_cost, 0) end) -\n                         sum(case\n                                 when a.medical_cost_pay_type_code in ('01', '02', '03', '09')\n                                     then nvl(personal_cost, 0) end)), 0) as hospitalization_insurance_cost\n             from medical_expense_rec a\n             where modify_flag in ('1', '2') and source_patient_id_type = 'IV'\n               and to_char(a.settle_date_time, 'yyyy-mm-dd') >= '2025-01-01'\n               and to_char(a.settle_date_time, 'yyyy-mm-dd') < current_date\n             group by to_char(a.settle_date_time, 'yyyy-mm-dd')\n         )\n         select 'hospitalization_cost' as indicatorCode, indicatorDate,hospitalization_cost as indicatorValue from tmp\n) a;",
-      "tables": [],
+      "tables": [
+        "medical_expense_rec"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_e31836",
-      "metric_id": "m_e31836",
+      "id": "gold_inpatient_drug_cost",
+      "metric_id": "inpatient_drug_cost",
       "metric_name": "住院药品费用",
       "kind": "sql",
       "sql": "select sum(indicatorValue)\nfrom (\n         select to_char(cost_date, 'yyyy-mm-dd')                                                            as indicatorDate,\n                sum(case when a.item_type_code in ('1', '11', '2', '3') then nvl(total_cost, 0) else 0 end) as indicatorValue\n         from advice_cost a\n         where modify_flag in ('1', '2')\n           and to_char(cost_date, 'yyyy-mm-dd') >= '2025-01-01'\n           and to_char(cost_date, 'yyyy-mm-dd') < current_date\n         group by to_char(cost_date, 'yyyy-mm-dd')\n         order by to_char(cost_date, 'yyyy-mm-dd')\n) a;",
-      "tables": [],
+      "tables": [
+        "advice_cost"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_abab0a",
-      "metric_id": "m_abab0a",
+      "id": "gold_inpatient_insured_cost",
+      "metric_id": "inpatient_insured_cost",
       "metric_name": "住院医保患者费用",
       "kind": "sql",
       "sql": "select sum(indicatorValue)\nfrom (\n         with tmp as (\n             select to_char(a.settle_date_time, 'yyyy-mm-dd')             as indicatorDate,\n                    sum(nvl(a.hospization_total_cost, 0))                 as hospitalization_cost,\n                    nvl((sum(case when a.medical_cost_pay_type_code in ('01', '02', '03', '09') then nvl(a.hospization_total_cost, 0) end) -\n                         sum(case\n                                 when a.medical_cost_pay_type_code in ('01', '02', '03', '09')\n                                     then nvl(personal_cost, 0) end)), 0) as hospitalization_insurance_cost\n             from medical_expense_rec a\n             where modify_flag in ('1', '2') and source_patient_id_type = 'IV'\n               and to_char(a.settle_date_time, 'yyyy-mm-dd') >= '2025-01-01'\n               and to_char(a.settle_date_time, 'yyyy-mm-dd') < current_date\n             group by to_char(a.settle_date_time, 'yyyy-mm-dd')\n         )\n         select 'hospitalization_insurance_cost' as indicatorCode, indicatorDate,hospitalization_insurance_cost as indicatorValue from tmp\n) a;",
-      "tables": [],
+      "tables": [
+        "medical_expense_rec"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_346e08",
-      "metric_id": "m_346e08",
+      "id": "gold_inpatient_insured_drug_cost",
+      "metric_id": "inpatient_insured_drug_cost",
       "metric_name": "住院医保患者药品费用",
       "kind": "sql",
       "sql": "select sum(indicatorValue)\nfrom (\n         select to_char(cost_date, 'yyyy-mm-dd')                                                            as indicatorDate,\n                sum(case when a.item_type_code in ('1', '11', '2', '3') then nvl(total_cost - self_cost - self_care_cost, 0) else 0 end) as indicatorValue\n         from advice_cost a\n         where modify_flag in ('1', '2')\n           and to_char(cost_date, 'yyyy-mm-dd') >= '2025-01-01'\n           and to_char(cost_date, 'yyyy-mm-dd') < current_date\n         group by to_char(cost_date, 'yyyy-mm-dd')\n         order by to_char(cost_date, 'yyyy-mm-dd')\n) a;",
-      "tables": [],
+      "tables": [
+        "advice_cost"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_17723f",
-      "metric_id": "m_17723f",
+      "id": "gold_inpatient_diagnosis_ranking",
+      "metric_id": "inpatient_diagnosis_ranking",
       "metric_name": "住院诊断排名",
       "kind": "sql",
       "sql": "select\n    a.itemCode as itemCode,\n    a.itemName as itemName,\n    sum(a.itemValue) as cnt\nfrom (\n         SELECT\n             TO_CHAR(a.diag_n_osis_date, 'YYYY-MM-DD') AS indicatorDate,\n             a.diagnose_code as itemCode,\n             b.dict_label as itemName,\n             COUNT(a.dcid) as itemValue\n         FROM diagnose_record a\n                  LEFT JOIN qmjk_dict b ON b.dict_type = 'ICD-10' and b.dict_code = a.diagnose_code\n         WHERE a.modify_flag in ('1', '2')\n           AND exists(select 1 from visit where modify_flag in ('1', '2') and visit_id = a.visit_id and activity_type_code in ('5', '6', '9'))\n           AND a.diagnose_code IS NOT NULL\n           AND a.diagnose_code <> ''\n           AND a.diagnose_code <> '-'\n           AND a.diag_n_osis_date >= DATE '2025-01-01'\n           AND a.diag_n_osis_date < CURRENT_DATE\n         GROUP BY\n             TO_CHAR(a.diag_n_osis_date, 'YYYY-MM-DD'),\n             a.diagnose_code,\n             b.dict_label\n) a\ngroup by a.itemCode,a.itemName\norder by cnt desc;",
-      "tables": [],
+      "tables": [
+        "diagnose_record",
+        "qmjk_dict",
+        "visit"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_2e680b",
-      "metric_id": "m_2e680b",
+      "id": "gold_cost_composition",
+      "metric_id": "cost_composition",
       "metric_name": "费用构成",
       "kind": "sql",
       "sql": "select\n    a.itemCode as itemCode,\n    a.itemName as itemName,\n    sum(a.itemValue) as cnt\nfrom (\n         SELECT\n             TO_CHAR(a.cost_date, 'YYYY-MM-DD') AS indicatorDate,\n             a.item_type_code AS itemCode,\n             b.dict_label AS itemName,\n             SUM(a.total_cost) AS itemValue\n         FROM advice_cost AS a\n                  LEFT JOIN qmjk_dict b ON a.item_type_code = b.dict_code\n         WHERE a.modify_flag IN ('1', '2')\n           AND a.item_type_code IS NOT NULL\n           AND a.item_type_code <> ''\n           AND a.item_type_name <> ''\n           AND a.item_type_name <> '-'\n           AND a.cost_date >= DATE '2025-01-01'\n           AND a.cost_date < CURRENT_DATE\n           AND b.dict_type = 'CC63_12_001_06'\n         GROUP BY\n             TO_CHAR(a.cost_date, 'YYYY-MM-DD'),\n             a.item_type_code,\n             b.dict_label\n         ORDER BY\n             TO_CHAR(a.cost_date, 'YYYY-MM-DD')\n) a\ngroup by a.itemCode,a.itemName\norder by cnt desc;",
-      "tables": [],
+      "tables": [
+        "advice_cost",
+        "qmjk_dict"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_5c4950",
-      "metric_id": "m_5c4950",
+      "id": "gold_formula_inpatient_insured_ratio",
+      "metric_id": "inpatient_insured_ratio",
+      "metric_name": "医保患者比例（住院）",
+      "kind": "formula",
+      "formula": "住院医保人次 / 住院人次 * 100%",
+      "tables": [
+        "visit",
+        "medical_expense_rec"
+      ],
+      "notes": "公式指标，无可执行 SQL"
+    },
+    {
+      "id": "gold_formula_inpatient_avg_cost",
+      "metric_id": "inpatient_avg_cost",
+      "metric_name": "住院次均费用",
+      "kind": "formula",
+      "formula": "住院总费用 / 住院人次",
+      "tables": [
+        "visit",
+        "medical_expense_rec"
+      ],
+      "notes": "公式指标，无可执行 SQL"
+    },
+    {
+      "id": "gold_total_surgeries",
+      "metric_id": "total_surgeries",
       "metric_name": "总手术例数",
       "kind": "sql",
       "sql": "select sum(indicatorValue)\nfrom (\n         with t1 as (select dcid,id_card, visit_id, to_char(operation_date_time, 'yyyy-mm-dd') as  operation_date_time\n                     from operation_record a where a.modify_flag in ('1', '2')),\n              t2 as (select dcid,to_char(b.operation_start_date_time, 'yyyy-mm-dd') as operation_start_date_time,operation_code\n                     from operation_operation b where b.modify_flag in ('1', '2')\n                                                  and to_char(b.operation_start_date_time, 'yyyy-mm-dd') >= '2025-01-01'\n                                                  and to_char(b.operation_start_date_time, 'yyyy-mm-dd') < CURRENT_DATE\n                                                  and b.operation_level_code in('1','2','3','4'))\n         select t2.operation_start_date_time as indicatorDate,count(distinct concat(id_card, visit_id, operation_date_time,operation_code)) as indicatorValue from t2\n                                                                                                                                                                       left join t1 on t1.dcid=t2.dcid\n         where t1.dcid is not null\n         group by t2.operation_start_date_time\n         order by t2.operation_start_date_time\n) a;",
-      "tables": [],
+      "tables": [
+        "operation_operation",
+        "operation_record"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_c7584a",
-      "metric_id": "m_c7584a",
+      "id": "gold_elective_surgeries",
+      "metric_id": "elective_surgeries",
       "metric_name": "择期手术例数",
       "kind": "sql",
       "sql": "select sum(indicatorValue)\nfrom (\n         with t1 as (select dcid,id_card, visit_id, to_char(operation_date_time, 'yyyy-mm-dd') as  operation_date_time\n                     from operation_record a where a.modify_flag in ('1', '2') and a.operation_period_type_code = '1'),\n              t2 as (select dcid,to_char(b.operation_start_date_time, 'yyyy-mm-dd') as operation_start_date_time,operation_code\n                     from operation_operation b where b.modify_flag in ('1', '2')\n                                                  and to_char(b.operation_start_date_time, 'yyyy-mm-dd') >= '2025-01-01'\n                                                  and to_char(b.operation_start_date_time, 'yyyy-mm-dd') < CURRENT_DATE\n                                                  and b.operation_level_code in('1','2','3','4'))\n         select t2.operation_start_date_time as indicatorDate,count(distinct concat(id_card, visit_id, operation_date_time,operation_code)) as indicatorValue from t2\n                                                                                                                                                                       left join t1 on t1.dcid=t2.dcid\n         where t1.dcid is not null\n         group by t2.operation_start_date_time\n         order by t2.operation_start_date_time\n) a;",
-      "tables": [],
+      "tables": [
+        "operation_operation",
+        "operation_record"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_5420f5",
-      "metric_id": "m_5420f5",
+      "id": "gold_level1_surgeries",
+      "metric_id": "level1_surgeries",
       "metric_name": "一级手术例数",
       "kind": "sql",
       "sql": "select sum(indicatorValue)\nfrom (\n         with t1 as (select dcid,id_card, visit_id, to_char(operation_date_time, 'yyyy-mm-dd') as  operation_date_time\n                     from operation_record a where a.modify_flag in ('1', '2')),\n              t2 as (select dcid,to_char(b.operation_start_date_time, 'yyyy-mm-dd') as operation_start_date_time,operation_code\n                     from operation_operation b where b.modify_flag in ('1', '2')\n                                                  and to_char(b.operation_start_date_time, 'yyyy-mm-dd') >= '2025-01-01'\n                                                  and to_char(b.operation_start_date_time, 'yyyy-mm-dd') < CURRENT_DATE\n                                                  and b.operation_level_code in('1'))\n         select t2.operation_start_date_time as indicatorDate,count(distinct concat(id_card, visit_id, operation_date_time,operation_code)) as indicatorValue from t2\n                                                                                                                                                                       left join t1 on t1.dcid=t2.dcid\n         where t1.dcid is not null\n         group by t2.operation_start_date_time\n         order by t2.operation_start_date_time\n) a;",
-      "tables": [],
+      "tables": [
+        "operation_operation",
+        "operation_record"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_ce61f3",
-      "metric_id": "m_ce61f3",
+      "id": "gold_level2_surgeries",
+      "metric_id": "level2_surgeries",
       "metric_name": "二级手术例数",
       "kind": "sql",
       "sql": "select sum(indicatorValue)\nfrom (\n         with t1 as (select dcid,id_card, visit_id, to_char(operation_date_time, 'yyyy-mm-dd') as  operation_date_time\n                     from operation_record a where a.modify_flag in ('1', '2')),\n              t2 as (select dcid,to_char(b.operation_start_date_time, 'yyyy-mm-dd') as operation_start_date_time,operation_code\n                     from operation_operation b where b.modify_flag in ('1', '2')\n                                                  and to_char(b.operation_start_date_time, 'yyyy-mm-dd') >= '2025-01-01'\n                                                  and to_char(b.operation_start_date_time, 'yyyy-mm-dd') < CURRENT_DATE\n                                                  and b.operation_level_code in('2'))\n         select t2.operation_start_date_time as indicatorDate,count(distinct concat(id_card, visit_id, operation_date_time,operation_code)) as indicatorValue from t2\n                                                                                                                                                                       left join t1 on t1.dcid=t2.dcid\n         where t1.dcid is not null\n         group by t2.operation_start_date_time\n         order by t2.operation_start_date_time\n) a;",
-      "tables": [],
+      "tables": [
+        "operation_operation",
+        "operation_record"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_c9c533",
-      "metric_id": "m_c9c533",
+      "id": "gold_level3_surgeries",
+      "metric_id": "level3_surgeries",
       "metric_name": "三级手术例数",
       "kind": "sql",
       "sql": "select sum(indicatorValue)\nfrom (\n         with t1 as (select dcid,id_card, visit_id, to_char(operation_date_time, 'yyyy-mm-dd') as  operation_date_time\n                     from operation_record a where a.modify_flag in ('1', '2')),\n              t2 as (select dcid,to_char(b.operation_start_date_time, 'yyyy-mm-dd') as operation_start_date_time,operation_code\n                     from operation_operation b where b.modify_flag in ('1', '2')\n                                                  and to_char(b.operation_start_date_time, 'yyyy-mm-dd') >= '2025-01-01'\n                                                  and to_char(b.operation_start_date_time, 'yyyy-mm-dd') < CURRENT_DATE\n                                                  and b.operation_level_code in('3'))\n         select t2.operation_start_date_time as indicatorDate,count(distinct concat(id_card, visit_id, operation_date_time,operation_code)) as indicatorValue from t2\n                                                                                                                                                                       left join t1 on t1.dcid=t2.dcid\n         where t1.dcid is not null\n         group by t2.operation_start_date_time\n         order by t2.operation_start_date_time\n) a;",
-      "tables": [],
+      "tables": [
+        "operation_operation",
+        "operation_record"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_50430c",
-      "metric_id": "m_50430c",
+      "id": "gold_level4_surgeries",
+      "metric_id": "level4_surgeries",
       "metric_name": "四级手术例数",
       "kind": "sql",
       "sql": "select sum(indicatorValue)\nfrom (\n         with t1 as (select dcid,id_card, visit_id, to_char(operation_date_time, 'yyyy-mm-dd') as  operation_date_time\n                     from operation_record a where a.modify_flag in ('1', '2')),\n              t2 as (select dcid,to_char(b.operation_start_date_time, 'yyyy-mm-dd') as operation_start_date_time,operation_code\n                     from operation_operation b where b.modify_flag in ('1', '2')\n                                                  and to_char(b.operation_start_date_time, 'yyyy-mm-dd') >= '2025-01-01'\n                                                  and to_char(b.operation_start_date_time, 'yyyy-mm-dd') < CURRENT_DATE\n                                                  and b.operation_level_code in('4'))\n         select t2.operation_start_date_time as indicatorDate,count(distinct concat(id_card, visit_id, operation_date_time,operation_code)) as indicatorValue from t2\n                                                                                                                                                                       left join t1 on t1.dcid=t2.dcid\n         where t1.dcid is not null\n         group by t2.operation_start_date_time\n         order by t2.operation_start_date_time\n) a;",
-      "tables": [],
+      "tables": [
+        "operation_operation",
+        "operation_record"
+      ],
       "notes": "原始 Oracle SQL"
     },
     {
-      "id": "gold_m_aba1e3",
-      "metric_id": "m_aba1e3",
+      "id": "gold_surgery_ranking",
+      "metric_id": "surgery_ranking",
       "metric_name": "手术排名",
       "kind": "sql",
       "sql": "select\n    a.itemCode as itemCode,\n    a.itemName as itemName,\n    sum(a.itemValue) as cnt\nfrom (\n         with t1 as (select dcid,id_card, visit_id, to_char(operation_date_time, 'yyyy-mm-dd') as  operation_date_time\n                     from operation_record a where a.modify_flag in ('1', '2')),\n              t2 as (select dcid,to_char(b.operation_start_date_time, 'yyyy-mm-dd') as operation_start_date_time,operation_code\n                     from operation_operation b where b.modify_flag in ('1', '2')\n                                                  and to_char(b.operation_start_date_time, 'yyyy-mm-dd') >= '2025-01-01'\n                                                  and to_char(b.operation_start_date_time, 'yyyy-mm-dd') < CURRENT_DATE\n                                                  and b.operation_level_code in('1','2','3','4'))\n         select t2.operation_start_date_time as indicatorDate,t2.operation_code as itemCode,c.dict_label as itemName,\n                count(distinct concat(id_card, visit_id, operation_date_time,operation_code)) as itemValue from t2\n                                                                                                                    left join t1 on t1.dcid=t2.dcid\n                                                                                                                    left join qmjk_dict c on c.dict_code = t2.operation_code\n         where t1.dcid is not null\n         group by t2.operation_start_date_time,t2.operation_code, c.dict_label\n         order by t2.operation_start_date_time\n) a\ngroup by a.itemCode,a.itemName\norder by cnt desc;",
-      "tables": [],
+      "tables": [
+        "operation_operation",
+        "operation_record",
+        "qmjk_dict"
+      ],
       "notes": "原始 Oracle SQL"
     }
   ]

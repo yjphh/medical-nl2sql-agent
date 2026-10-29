@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "metrics": [
     {
       "id": "outpatient_visits",
@@ -9,9 +9,9 @@
         "门诊量",
         "门诊就诊人次"
       ],
-      "definition": "统计周期内门诊的就诊记录去重人次",
-      "formula": "COUNT(DISTINCT visit_id)",
-      "gold_sql_ref": "",
+      "definition": "统计周期内门诊就诊记录去重人次",
+      "formula": "COUNT(DISTINCT visit_id || id_card || treatment_occurrence_time)",
+      "gold_sql_ref": "gold_outpatient_visits",
       "related_tables": [
         "visit"
       ],
@@ -30,16 +30,329 @@
       "aliases": [
         "急诊量"
       ],
-      "definition": "统计周期内急诊的就诊记录去重人次",
-      "formula": "COUNT(DISTINCT visit_id)",
-      "gold_sql_ref": "",
+      "definition": "统计周期内急诊就诊记录去重人次",
+      "formula": "COUNT(DISTINCT visit_id || id_card || treatment_occurrence_time)",
+      "gold_sql_ref": "gold_emergency_visits",
       "related_tables": [
         "visit"
       ],
       "time_field": "visit.treatment_occurrence_time",
       "default_interpretation": "按就诊发生日期、自然月",
-      "ambiguity_notes": [],
+      "ambiguity_notes": [
+        "急诊是否包含留观"
+      ],
       "unit": "人次"
+    },
+    {
+      "id": "insured_visits",
+      "name": "医保患者人次",
+      "category": "门急诊情况",
+      "aliases": [
+        "医保人次",
+        "参保患者人次"
+      ],
+      "definition": "统计周期内医保患者的门诊/急诊就诊记录去重人次",
+      "formula": "COUNT(DISTINCT CASE WHEN activity_type_code IN ('1','2') THEN visit_id || id_card || treatment_occurrence_time END)",
+      "gold_sql_ref": "gold_insured_visits",
+      "related_tables": [
+        "visit",
+        "medical_expense_rec"
+      ],
+      "time_field": "visit.treatment_occurrence_time",
+      "default_interpretation": "按就诊发生日期、自然月",
+      "ambiguity_notes": [
+        "医保类型范围",
+        "医保患者 vs 医保结算"
+      ],
+      "unit": "人次"
+    },
+    {
+      "id": "male_patients",
+      "name": "男性患者人次",
+      "category": "门急诊情况",
+      "aliases": [
+        "男性患者",
+        "男性门诊人次"
+      ],
+      "definition": "统计周期内男性患者的门诊/急诊就诊人次",
+      "formula": "COUNT(DISTINCT visit_id || id_card || treatment_occurrence_time)",
+      "gold_sql_ref": "gold_male_patients",
+      "related_tables": [
+        "visit",
+        "patient"
+      ],
+      "time_field": "visit.treatment_occurrence_time",
+      "default_interpretation": "按自然月统计",
+      "ambiguity_notes": [
+        "男性是否只算门诊"
+      ],
+      "unit": "人次"
+    },
+    {
+      "id": "female_visits",
+      "name": "女性患者人次",
+      "category": "门急诊情况",
+      "aliases": [
+        "女性患者",
+        "女性门诊人次"
+      ],
+      "definition": "统计周期内女性患者的门诊/急诊就诊人次",
+      "formula": "COUNT(DISTINCT visit_id || id_card || treatment_occurrence_time)",
+      "gold_sql_ref": "gold_female_visits",
+      "related_tables": [
+        "visit",
+        "patient"
+      ],
+      "time_field": "visit.treatment_occurrence_time",
+      "default_interpretation": "按自然月统计",
+      "ambiguity_notes": [
+        "女性是否只算门诊"
+      ],
+      "unit": "人次"
+    },
+    {
+      "id": "examination_visits",
+      "name": "检查人次",
+      "category": "门急诊情况",
+      "aliases": [
+        "检查量",
+        "检查人数"
+      ],
+      "definition": "统计周期内门诊/急诊检查记录去重人次",
+      "formula": "COUNT(DISTINCT 检查记录)",
+      "gold_sql_ref": "gold_examination_visits",
+      "related_tables": [
+        "visit",
+        "examination_record"
+      ],
+      "time_field": "examination_record.execute_date",
+      "default_interpretation": "按检查日期、自然月",
+      "ambiguity_notes": [
+        "检查人次 vs 检查项目数"
+      ],
+      "unit": "人次"
+    },
+    {
+      "id": "inspection_visits",
+      "name": "检验人次",
+      "category": "门急诊情况",
+      "aliases": [
+        "检验量",
+        "检验人数"
+      ],
+      "definition": "统计周期内门诊/急诊检验记录去重人次",
+      "formula": "COUNT(DISTINCT 检验记录)",
+      "gold_sql_ref": "gold_inspection_visits",
+      "related_tables": [
+        "visit",
+        "inspection_record"
+      ],
+      "time_field": "inspection_record.inspection_date",
+      "default_interpretation": "按检验日期、自然月",
+      "ambiguity_notes": [
+        "检验人次 vs 检验项目数"
+      ],
+      "unit": "人次"
+    },
+    {
+      "id": "outpatient_total_revenue",
+      "name": "门急诊总收入",
+      "category": "门急诊情况",
+      "aliases": [
+        "门急诊收入",
+        "总收入",
+        "门诊总收入"
+      ],
+      "definition": "统计周期内门急诊结算的总费用",
+      "formula": "SUM(IFNULL(outpatient_cost, 0))",
+      "gold_sql_ref": "gold_outpatient_total_revenue",
+      "related_tables": [
+        "medical_expense_rec"
+      ],
+      "time_field": "medical_expense_rec.settle_date_time",
+      "default_interpretation": "按结算日期、自然月",
+      "ambiguity_notes": [
+        "门急诊 vs 住院",
+        "按结算日期归属",
+        "是否含医保/自费"
+      ],
+      "unit": "元"
+    },
+    {
+      "id": "outpatient_drug_revenue",
+      "name": "门诊药品收入",
+      "category": "门急诊情况",
+      "aliases": [
+        "药品收入",
+        "门诊药费"
+      ],
+      "definition": "统计周期内门诊药品费用合计",
+      "formula": "SUM(IFNULL(total_cost, 0))",
+      "gold_sql_ref": "gold_outpatient_drug_revenue",
+      "related_tables": [
+        "encounter_medical_cost"
+      ],
+      "time_field": "encounter_medical_cost.cost_date",
+      "default_interpretation": "按费用发生日期、自然月",
+      "ambiguity_notes": [
+        "药品项目类型范围",
+        "门诊 vs 急诊"
+      ],
+      "unit": "元"
+    },
+    {
+      "id": "outpatient_prescription_count",
+      "name": "门诊药品处方数",
+      "category": "门急诊情况",
+      "aliases": [
+        "处方数",
+        "药品处方数"
+      ],
+      "definition": "统计周期内门诊药品处方数量",
+      "formula": "COUNT(1)",
+      "gold_sql_ref": "gold_outpatient_prescription_count",
+      "related_tables": [
+        "prescription_record"
+      ],
+      "time_field": "prescription_record.prescription_date",
+      "default_interpretation": "按处方日期、自然月",
+      "ambiguity_notes": [
+        "处方数 vs 处方明细数"
+      ],
+      "unit": "张"
+    },
+    {
+      "id": "examination_ranking",
+      "name": "检查项目排名",
+      "category": "门急诊情况",
+      "aliases": [
+        "检查排名"
+      ],
+      "definition": "统计周期内各检查项目的检查数量排名",
+      "formula": "GROUP BY 检查项目 COUNT(1) ORDER BY DESC",
+      "gold_sql_ref": "gold_examination_ranking",
+      "related_tables": [
+        "examination_exam",
+        "examination_record",
+        "visit"
+      ],
+      "time_field": "examination_record.execute_date",
+      "default_interpretation": "按检查日期、自然月",
+      "ambiguity_notes": [
+        "按项目还是按部位",
+        "排名取前几"
+      ],
+      "unit": "排名"
+    },
+    {
+      "id": "outpatient_cost_ranking",
+      "name": "门诊费用排名",
+      "category": "门急诊情况",
+      "aliases": [
+        "费用排名"
+      ],
+      "definition": "统计周期内门诊各费用项目的金额排名",
+      "formula": "GROUP BY 费用项目 SUM(total_cost) ORDER BY DESC",
+      "gold_sql_ref": "gold_outpatient_cost_ranking",
+      "related_tables": [
+        "encounter_medical_cost",
+        "qmjk_dict"
+      ],
+      "time_field": "encounter_medical_cost.charging_date",
+      "default_interpretation": "按收费日期、自然月",
+      "ambiguity_notes": [
+        "按项目还是按患者",
+        "排名取前几"
+      ],
+      "unit": "排名"
+    },
+    {
+      "id": "outpatient_insured_ratio",
+      "name": "门急诊医保患者比例",
+      "category": "门急诊情况",
+      "aliases": [
+        "门急诊医保占比"
+      ],
+      "definition": "医保患者人次占门诊+急诊人次的比例",
+      "formula": "医保患者人次 / (门诊人次 + 急诊人次) * 100%",
+      "gold_sql_ref": "gold_formula_outpatient_insured_ratio",
+      "related_tables": [
+        "visit",
+        "medical_expense_rec"
+      ],
+      "time_field": "visit.treatment_occurrence_time",
+      "default_interpretation": "按自然月统计",
+      "ambiguity_notes": [
+        "分母是否含急诊",
+        "医保类型范围"
+      ],
+      "unit": "%"
+    },
+    {
+      "id": "outpatient_avg_cost",
+      "name": "门诊均次费用",
+      "category": "门急诊情况",
+      "aliases": [
+        "门诊次均费用",
+        "均次费用"
+      ],
+      "definition": "门急诊总收入除以门诊+急诊人次",
+      "formula": "门急诊总收入 / (门诊人次 + 急诊人次)",
+      "gold_sql_ref": "gold_formula_outpatient_avg_cost",
+      "related_tables": [
+        "visit",
+        "medical_expense_rec"
+      ],
+      "time_field": "visit.treatment_occurrence_time",
+      "default_interpretation": "按自然月统计",
+      "ambiguity_notes": [
+        "分子按结算日期，分母按就诊日期",
+        "是否含急诊"
+      ],
+      "unit": "元/人次"
+    },
+    {
+      "id": "patient_avg_drug_cost",
+      "name": "患者次均药费",
+      "category": "门急诊情况",
+      "aliases": [
+        "次均药费"
+      ],
+      "definition": "门诊药品收入除以门诊+急诊人次",
+      "formula": "门诊药品收入 / (门诊人次 + 急诊人次)",
+      "gold_sql_ref": "gold_formula_patient_avg_drug_cost",
+      "related_tables": [
+        "visit",
+        "encounter_medical_cost"
+      ],
+      "time_field": "visit.treatment_occurrence_time",
+      "default_interpretation": "按自然月统计",
+      "ambiguity_notes": [
+        "药品收入按费用日期",
+        "分母范围"
+      ],
+      "unit": "元/人次"
+    },
+    {
+      "id": "outpatient_drug_ratio",
+      "name": "门诊药占比",
+      "category": "门急诊情况",
+      "aliases": [
+        "药占比"
+      ],
+      "definition": "门诊药品收入占门急诊总收入的比例",
+      "formula": "门诊药品收入 / 门急诊总收入 * 100%",
+      "gold_sql_ref": "gold_formula_outpatient_drug_ratio",
+      "related_tables": [
+        "encounter_medical_cost"
+      ],
+      "time_field": "encounter_medical_cost.cost_date",
+      "default_interpretation": "按自然月统计",
+      "ambiguity_notes": [
+        "药品范围",
+        "分母总收入范围"
+      ],
+      "unit": "%"
     },
     {
       "id": "hospitalization_visits",
@@ -48,27 +361,30 @@
       "aliases": [
         "住院量"
       ],
-      "definition": "统计周期内住院的就诊记录去重人次",
-      "formula": "COUNT(DISTINCT visit_id)",
-      "gold_sql_ref": "",
+      "definition": "统计周期内住院就诊记录去重人次",
+      "formula": "COUNT(DISTINCT visit_id || id_card || treatment_occurrence_time)",
+      "gold_sql_ref": "gold_hospitalization_visits",
       "related_tables": [
         "visit"
       ],
       "time_field": "visit.treatment_occurrence_time",
       "default_interpretation": "按就诊发生日期、自然月",
-      "ambiguity_notes": [],
+      "ambiguity_notes": [
+        "住院类型 5/6/9",
+        "人次 vs 人数"
+      ],
       "unit": "人次"
     },
     {
-      "id": "medical_insurance_ratio",
-      "name": "医保患者比例",
-      "category": "门急诊情况",
+      "id": "inpatient_insured_visits",
+      "name": "住院医保人次",
+      "category": "住院情况",
       "aliases": [
-        "医保占比"
+        "住院医保患者人次"
       ],
-      "definition": "医保患者人次除以总人次",
-      "formula": "医保患者人次 / 门诊人次 * 100%",
-      "gold_sql_ref": "",
+      "definition": "统计周期内住院医保患者人次",
+      "formula": "COUNT(DISTINCT visit_id || id_card || treatment_occurrence_time)",
+      "gold_sql_ref": "gold_inpatient_insured_visits",
       "related_tables": [
         "visit",
         "medical_expense_rec"
@@ -76,28 +392,380 @@
       "time_field": "visit.treatment_occurrence_time",
       "default_interpretation": "按自然月统计",
       "ambiguity_notes": [
-        "医保包含哪些类型？"
+        "医保类型范围",
+        "住院类型 5/6/9"
+      ],
+      "unit": "人次"
+    },
+    {
+      "id": "inpatient_examination_visits",
+      "name": "住院检查人次",
+      "category": "住院情况",
+      "aliases": [
+        "住院检查量"
+      ],
+      "definition": "统计周期内住院检查记录去重人次",
+      "formula": "COUNT(DISTINCT 检查记录)",
+      "gold_sql_ref": "gold_inpatient_examination_visits",
+      "related_tables": [
+        "visit",
+        "examination_record"
+      ],
+      "time_field": "examination_record.execute_date",
+      "default_interpretation": "按检查日期、自然月",
+      "ambiguity_notes": [
+        "住院范围",
+        "检查人次 vs 项目数"
+      ],
+      "unit": "人次"
+    },
+    {
+      "id": "inpatient_inspection_visits",
+      "name": "住院检验人次",
+      "category": "住院情况",
+      "aliases": [
+        "住院检验量"
+      ],
+      "definition": "统计周期内住院检验记录去重人次",
+      "formula": "COUNT(DISTINCT 检验记录)",
+      "gold_sql_ref": "gold_inpatient_inspection_visits",
+      "related_tables": [
+        "visit",
+        "inspection_record"
+      ],
+      "time_field": "inspection_record.inspection_date",
+      "default_interpretation": "按检验日期、自然月",
+      "ambiguity_notes": [
+        "住院范围",
+        "检验人次 vs 项目数"
+      ],
+      "unit": "人次"
+    },
+    {
+      "id": "inpatient_total_cost",
+      "name": "住院总费用",
+      "category": "住院情况",
+      "aliases": [
+        "住院收入"
+      ],
+      "definition": "统计周期内住院结算的总费用",
+      "formula": "SUM(IFNULL(hospitalization_total_cost, 0))",
+      "gold_sql_ref": "gold_inpatient_total_cost",
+      "related_tables": [
+        "medical_expense_rec"
+      ],
+      "time_field": "medical_expense_rec.settle_date_time",
+      "default_interpretation": "按结算日期、自然月",
+      "ambiguity_notes": [
+        "按结算日期归属",
+        "是否含医保/自费"
+      ],
+      "unit": "元"
+    },
+    {
+      "id": "inpatient_drug_cost",
+      "name": "住院药品费用",
+      "category": "住院情况",
+      "aliases": [
+        "住院药费"
+      ],
+      "definition": "统计周期内住院药品费用合计",
+      "formula": "SUM(IFNULL(total_cost, 0))",
+      "gold_sql_ref": "gold_inpatient_drug_cost",
+      "related_tables": [
+        "advice_cost"
+      ],
+      "time_field": "advice_cost.cost_date",
+      "default_interpretation": "按费用日期、自然月",
+      "ambiguity_notes": [
+        "药品项目类型",
+        "住院范围"
+      ],
+      "unit": "元"
+    },
+    {
+      "id": "inpatient_insured_cost",
+      "name": "住院医保患者费用",
+      "category": "住院情况",
+      "aliases": [
+        "住院医保费用"
+      ],
+      "definition": "统计周期内住院医保患者费用合计",
+      "formula": "SUM(IFNULL(hospitalization_total_cost, 0))",
+      "gold_sql_ref": "gold_inpatient_insured_cost",
+      "related_tables": [
+        "medical_expense_rec"
+      ],
+      "time_field": "medical_expense_rec.settle_date_time",
+      "default_interpretation": "按结算日期、自然月",
+      "ambiguity_notes": [
+        "医保类型范围",
+        "住院范围"
+      ],
+      "unit": "元"
+    },
+    {
+      "id": "inpatient_insured_drug_cost",
+      "name": "住院医保患者药品费用",
+      "category": "住院情况",
+      "aliases": [
+        "住院医保药费"
+      ],
+      "definition": "统计周期内住院医保患者药品费用合计",
+      "formula": "SUM(IFNULL(total_cost, 0))",
+      "gold_sql_ref": "gold_inpatient_insured_drug_cost",
+      "related_tables": [
+        "advice_cost"
+      ],
+      "time_field": "advice_cost.cost_date",
+      "default_interpretation": "按费用日期、自然月",
+      "ambiguity_notes": [
+        "医保范围",
+        "药品项目类型"
+      ],
+      "unit": "元"
+    },
+    {
+      "id": "inpatient_diagnosis_ranking",
+      "name": "住院诊断排名",
+      "category": "住院情况",
+      "aliases": [
+        "诊断排名"
+      ],
+      "definition": "统计周期内住院诊断数量排名",
+      "formula": "GROUP BY 诊断 COUNT(1) ORDER BY DESC",
+      "gold_sql_ref": "gold_inpatient_diagnosis_ranking",
+      "related_tables": [
+        "diagnose_record",
+        "qmjk_dict",
+        "visit"
+      ],
+      "time_field": "diagnose_record.diag_n_osis_date",
+      "default_interpretation": "按诊断日期、自然月",
+      "ambiguity_notes": [
+        "按诊断编码还是名称",
+        "排名取前几"
+      ],
+      "unit": "排名"
+    },
+    {
+      "id": "cost_composition",
+      "name": "费用构成",
+      "category": "住院情况",
+      "aliases": [
+        "收入构成",
+        "费用结构"
+      ],
+      "definition": "统计周期内住院费用按项目类型的构成",
+      "formula": "GROUP BY item_type_code SUM(total_cost)",
+      "gold_sql_ref": "gold_cost_composition",
+      "related_tables": [
+        "advice_cost",
+        "qmjk_dict"
+      ],
+      "time_field": "advice_cost.cost_date",
+      "default_interpretation": "按费用日期、自然月",
+      "ambiguity_notes": [
+        "项目类型映射",
+        "金额还是占比"
+      ],
+      "unit": "元/%"
+    },
+    {
+      "id": "inpatient_insured_ratio",
+      "name": "医保患者比例（住院）",
+      "category": "住院情况",
+      "aliases": [
+        "住院医保占比"
+      ],
+      "definition": "住院医保人次占住院人次的比例",
+      "formula": "住院医保人次 / 住院人次 * 100%",
+      "gold_sql_ref": "gold_formula_inpatient_insured_ratio",
+      "related_tables": [
+        "visit",
+        "medical_expense_rec"
+      ],
+      "time_field": "visit.treatment_occurrence_time",
+      "default_interpretation": "按自然月统计",
+      "ambiguity_notes": [
+        "医保类型范围",
+        "住院类型 5/6/9"
       ],
       "unit": "%"
     },
     {
-      "id": "male_patients",
-      "name": "男性患者人次",
-      "category": "门急诊情况",
+      "id": "inpatient_avg_cost",
+      "name": "住院次均费用",
+      "category": "住院情况",
       "aliases": [
-        "男性门诊人次"
+        "住院次均"
       ],
-      "definition": "性别为男的就诊人次",
-      "formula": "COUNT(DISTINCT visit_id)",
-      "gold_sql_ref": "",
+      "definition": "住院总费用除以住院人次",
+      "formula": "住院总费用 / 住院人次",
+      "gold_sql_ref": "gold_formula_inpatient_avg_cost",
       "related_tables": [
         "visit",
-        "patient"
+        "medical_expense_rec"
       ],
-      "time_field": "visit.treatment_occurrence_time",
+      "time_field": "medical_expense_rec.settle_date_time",
       "default_interpretation": "按自然月统计",
-      "ambiguity_notes": [],
-      "unit": "人次"
+      "ambiguity_notes": [
+        "分子按结算日期",
+        "分母按就诊日期"
+      ],
+      "unit": "元/人次"
+    },
+    {
+      "id": "total_surgeries",
+      "name": "总手术例数",
+      "category": "手术情况",
+      "aliases": [
+        "手术台次",
+        "手术量"
+      ],
+      "definition": "统计周期内手术操作例数",
+      "formula": "COUNT(DISTINCT 手术操作)",
+      "gold_sql_ref": "gold_total_surgeries",
+      "related_tables": [
+        "operation_record",
+        "operation_operation"
+      ],
+      "time_field": "operation_operation.operation_start_date_time",
+      "default_interpretation": "按手术开始时间、自然月",
+      "ambiguity_notes": [
+        "手术例数 vs 手术人次",
+        "手术级别范围"
+      ],
+      "unit": "例"
+    },
+    {
+      "id": "elective_surgeries",
+      "name": "择期手术例数",
+      "category": "手术情况",
+      "aliases": [
+        "择期手术量"
+      ],
+      "definition": "统计周期内择期手术例数",
+      "formula": "COUNT(DISTINCT 手术操作) WHERE operation_period_type_code='1'",
+      "gold_sql_ref": "gold_elective_surgeries",
+      "related_tables": [
+        "operation_record",
+        "operation_operation"
+      ],
+      "time_field": "operation_operation.operation_start_date_time",
+      "default_interpretation": "按手术开始时间、自然月",
+      "ambiguity_notes": [
+        "择期定义",
+        "手术级别范围"
+      ],
+      "unit": "例"
+    },
+    {
+      "id": "level1_surgeries",
+      "name": "一级手术例数",
+      "category": "手术情况",
+      "aliases": [
+        "一级手术量"
+      ],
+      "definition": "统计周期内一级手术例数",
+      "formula": "COUNT(DISTINCT 手术操作) WHERE operation_level_code='1'",
+      "gold_sql_ref": "gold_level1_surgeries",
+      "related_tables": [
+        "operation_record",
+        "operation_operation"
+      ],
+      "time_field": "operation_operation.operation_start_date_time",
+      "default_interpretation": "按手术开始时间、自然月",
+      "ambiguity_notes": [
+        "手术级别口径"
+      ],
+      "unit": "例"
+    },
+    {
+      "id": "level2_surgeries",
+      "name": "二级手术例数",
+      "category": "手术情况",
+      "aliases": [
+        "二级手术量"
+      ],
+      "definition": "统计周期内二级手术例数",
+      "formula": "COUNT(DISTINCT 手术操作) WHERE operation_level_code='2'",
+      "gold_sql_ref": "gold_level2_surgeries",
+      "related_tables": [
+        "operation_record",
+        "operation_operation"
+      ],
+      "time_field": "operation_operation.operation_start_date_time",
+      "default_interpretation": "按手术开始时间、自然月",
+      "ambiguity_notes": [
+        "手术级别口径"
+      ],
+      "unit": "例"
+    },
+    {
+      "id": "level3_surgeries",
+      "name": "三级手术例数",
+      "category": "手术情况",
+      "aliases": [
+        "三级手术量"
+      ],
+      "definition": "统计周期内三级手术例数",
+      "formula": "COUNT(DISTINCT 手术操作) WHERE operation_level_code='3'",
+      "gold_sql_ref": "gold_level3_surgeries",
+      "related_tables": [
+        "operation_record",
+        "operation_operation"
+      ],
+      "time_field": "operation_operation.operation_start_date_time",
+      "default_interpretation": "按手术开始时间、自然月",
+      "ambiguity_notes": [
+        "手术级别口径"
+      ],
+      "unit": "例"
+    },
+    {
+      "id": "level4_surgeries",
+      "name": "四级手术例数",
+      "category": "手术情况",
+      "aliases": [
+        "四级手术量"
+      ],
+      "definition": "统计周期内四级手术例数",
+      "formula": "COUNT(DISTINCT 手术操作) WHERE operation_level_code='4'",
+      "gold_sql_ref": "gold_level4_surgeries",
+      "related_tables": [
+        "operation_record",
+        "operation_operation"
+      ],
+      "time_field": "operation_operation.operation_start_date_time",
+      "default_interpretation": "按手术开始时间、自然月",
+      "ambiguity_notes": [
+        "手术级别口径"
+      ],
+      "unit": "例"
+    },
+    {
+      "id": "surgery_ranking",
+      "name": "手术排名",
+      "category": "手术情况",
+      "aliases": [
+        "手术项目排名"
+      ],
+      "definition": "统计周期内各手术项目的数量排名",
+      "formula": "GROUP BY operation_code COUNT(1) ORDER BY DESC",
+      "gold_sql_ref": "gold_surgery_ranking",
+      "related_tables": [
+        "operation_record",
+        "operation_operation",
+        "qmjk_dict"
+      ],
+      "time_field": "operation_operation.operation_start_date_time",
+      "default_interpretation": "按手术开始时间、自然月",
+      "ambiguity_notes": [
+        "按手术编码还是名称",
+        "排名取前几"
+      ],
+      "unit": "排名"
     }
   ]
 }
