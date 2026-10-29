@@ -1,55 +1,94 @@
+"""Command-line demo for the knowledge layer."""
+
+from __future__ import annotations
+
 import sys
-import os
 
-# 确保能找到 app 模块
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
+from app.knowledge.loader import KnowledgeDataError
 from app.knowledge.provider import FileKnowledgeProvider
 
-def main():
+
+def _safe_stdout() -> None:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _target_text(term) -> str:
+    target = term.target or {}
+    if term.target_type == "metric":
+        return f"指标 {target.get('metric_id')}"
+    if term.target_type == "table":
+        return f"表 {target.get('table')}"
+    if term.target_type == "time_range":
+        return f"时间字段 {target.get('table')}.{target.get('column')}"
+    text = f"{target.get('table')}.{target.get('column')}"
+    if target.get("value"):
+        text += f" = {target['value']}"
+    elif target.get("values"):
+        text += f" IN {target['values']}"
+    return text
+
+
+def main() -> None:
+    _safe_stdout()
     if len(sys.argv) < 2:
-        print("用法: python -m app.knowledge.inspect \"你的问题\"")
+        print('用法: python -m app.knowledge.inspect "你的问题"')
         return
-
     question = sys.argv[1]
-    print(f"🔍 正在分析问题: 【{question}】\n")
+    print(f"问题: {question}\n")
 
-    provider = FileKnowledgeProvider(data_dir="data")
+    try:
+        provider = FileKnowledgeProvider("data")
+    except KnowledgeDataError as exc:
+        print("知识库加载失败:")
+        print(exc)
+        raise SystemExit(1)
 
-    # 1. 翻译术语
     terms = provider.resolve_terms(question)
-    print("1️⃣ 术语识别:")
-    for t in terms:
-        print(f"   - {t['term']} -> {t['target']}")
-    if not terms: print("   (未识别到术语)")
+    print("1. 术语解析:")
+    for term in terms:
+        print(
+            f"   - {term.term} -> {_target_text(term)} "
+            f"({term.match or term.target_type}, {term.confidence}, {term.source})"
+        )
+    if not terms:
+        print("   (未识别到术语)")
 
-    # 2. 找指标
     metrics = provider.search_metrics(question)
-    print("\n2️⃣ 指标匹配:")
-    for m in metrics:
-        print(f"   - {m['name']} (ID: {m['id']})")
-    if not metrics: print("   (未匹配到指标)")
+    print("\n2. 指标候选:")
+    for metric in metrics:
+        print(f"   - {metric.name} ({metric.id}) gold={metric.gold_sql_ref}")
+    if not metrics:
+        print("   (未匹配到指标)")
 
-    # 3. 找歧义
-    ambiguities = provider.detect_ambiguities(question, terms)
-    print("\n3️⃣ 歧义检测 (是否需要追问):")
-    for a in ambiguities:
-        print(f"   - ⚠️ {a['question']}")
-        print(f"     选项: {a['options']}")
-    if not ambiguities: print("   (无歧义，可直接生成)")
+    report = provider.detect_ambiguities(question, terms)
+    print("\n3. 歧义检测:")
+    for item in report.items:
+        flag = "blocking" if item["blocking"] else "optional"
+        print(f"   - [{item['code']}] {item['question']} ({flag})")
+        print(f"     选项: {item['options']}；默认: {item['default']}")
+    if not report.items:
+        print("   (无歧义，可直接生成)")
 
-    # 4. 找相似 SQL
-    examples = provider.search_sql_examples(question)
-    print("\n4️⃣ 参考 SQL 示例:")
-    for e in examples:
-        print(f"   - 问题: {e['question']}")
-        print(f"     SQL: {e['sql'][:80]}...")
-    if not examples: print("   (无相似示例)")
+    examples = provider.search_sql_examples(question, metrics=metrics, terms=terms)
+    print("\n4. 相似 SQL 示例:")
+    for example in examples:
+        print(f"   - {example.id}: {example.question}")
+    if not examples:
+        print("   (无相似示例)")
 
-    # 5. 打印 schema
-    print("\n5️⃣ 数据库 Schema 上下文:")
-    schema_ctx = provider.get_schema_context(question)
-    print("   " + schema_ctx.replace("\n", "\n   ")[:300] + "...\n")
+    context = provider.get_schema_context(question)
+    print("\n5. Schema 上下文:")
+    print(f"   相关表: {context.tables}")
+    print(f"   字符数: {context.char_count}")
+    print("   关联关系:")
+    for path in context.join_paths:
+        print(f"     - {path['on']} ({path['type']})")
+    print("   预览:")
+    print("   " + context.prompt_text[:1000].replace("\n", "\n   "))
+
 
 if __name__ == "__main__":
     main()
