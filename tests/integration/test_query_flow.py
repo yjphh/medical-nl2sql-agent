@@ -63,6 +63,27 @@ def test_query_without_ambiguity_returns_sql():
     assert status.json()["status"] == "ok"
 
 
+def test_direct_mode_skips_clarification():
+    """``mode=direct`` is the baseline: one model call, no clarifying round."""
+    session_id = new_session()
+    body = client.post(
+        "/queries",
+        json={
+            "session_id": session_id,
+            "question": "上个月门诊人次是多少",
+            "mode": "direct",
+        },
+    ).json()
+
+    assert body["status"] == "ok"
+    assert body["clarification"] is None
+    assert body["sql"] == "SELECT COUNT(*) AS visits FROM visit"
+    assert body["sql_source"] == "sqlite"
+    assert body["sql_confidence"] == 0.9
+    assert body["trace"][0]["node"] == "direct_sql"
+    assert body["trace"][0]["mode"] == "direct"
+
+
 def test_clarification_round_trip():
     session_id = new_session()
     response = client.post(
@@ -141,9 +162,80 @@ def test_answer_after_completion_returns_409():
     assert response.status_code == 409
 
 
+def test_get_query_returns_the_pending_clarification():
+    """A reloaded or timed-out client must be able to resume, not restart."""
+    session_id = new_session()
+    body = client.post(
+        "/queries",
+        json={"session_id": session_id, "question": "上个月门诊人次是多少"},
+    ).json()
+    assert body["status"] == "needs_clarification"
+
+    recovered = client.get(f"/queries/{body['query_id']}")
+    assert recovered.status_code == 200
+    payload = recovered.json()
+    assert payload["status"] == "needs_clarification"
+    assert payload["clarification"]["question_id"] == body["clarification"]["question_id"]
+    assert payload["clarification"]["code"] == "time_range"
+
+
+def test_client_request_id_makes_retry_idempotent():
+    session_id = new_session()
+    request_id = "6f1b1b9e-0000-4000-8000-000000000002"
+    first = client.post(
+        "/queries",
+        json={
+            "session_id": session_id,
+            "question": "2025年1月急诊人次",
+            "request_id": request_id,
+        },
+    ).json()
+    second = client.post(
+        "/queries",
+        json={
+            "session_id": session_id,
+            "question": "2025年1月急诊人次",
+            "request_id": request_id,
+        },
+    ).json()
+    assert first["query_id"] == request_id
+    assert second["query_id"] == request_id
+    assert second["status"] == first["status"]
+    assert second["sql"] == first["sql"]
+
+
 def test_unknown_query_returns_404():
     response = client.post(
         "/queries/not-a-query/answers",
         json={"answer": {"option_id": "natural_month"}},
     )
     assert response.status_code == 404
+
+
+def test_health_probes_database_and_knowledge():
+    response = client.get("/health")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok", body
+    assert body["checks"]["database"]["ok"]
+    assert body["checks"]["knowledge"]["ok"]
+
+
+def test_graph_failure_is_reported_in_chinese_with_detail(monkeypatch):
+    """The user sees a human sentence; the stack text is folded away."""
+
+    class Boom:
+        def invoke(self, *args, **kwargs):
+            raise TimeoutError("Request timed out after 30s")
+
+    monkeypatch.setattr("app.api.routes_queries.get_graph", lambda: Boom())
+    session_id = new_session()
+    body = client.post(
+        "/queries",
+        json={"session_id": session_id, "question": "2025年1月急诊人次"},
+    ).json()
+
+    assert body["status"] == "error"
+    assert body["error"]["code"] == "llm_timeout"
+    assert "超时" in body["error"]["message"]
+    assert "TimeoutError" in body["error"]["detail"]

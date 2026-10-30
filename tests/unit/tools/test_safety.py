@@ -46,3 +46,36 @@ def test_select_star_is_pii_risk():
     result = check_sql("SELECT * FROM visit")
     assert not result.safe
     assert result.reason == "select_star_pii_risk"
+
+
+def test_qualified_star_is_also_a_pii_risk():
+    # ``t.*`` parses as a Column wrapping a Star, not a bare exp.Star.
+    for sql in ("SELECT t.* FROM visit t", "SELECT v.*, 1 FROM visit v"):
+        result = check_sql(sql)
+        assert not result.safe, sql
+        assert result.reason == "select_star_pii_risk", sql
+
+
+def test_every_union_branch_is_inspected():
+    sql = "SELECT 1 AS n UNION ALL SELECT id_card FROM visit"
+    result = check_sql(sql)
+    assert not result.safe
+    assert result.pii_columns == ["id_card"]
+
+
+def test_pii_in_group_or_order_or_having_is_rejected():
+    for sql in (
+        "SELECT COUNT(1) AS c FROM visit GROUP BY id_card",
+        "SELECT COUNT(1) AS c FROM visit ORDER BY id_card",
+        "SELECT COUNT(1) AS c FROM visit GROUP BY activity_type_code HAVING MAX(id_card) > 1",
+    ):
+        result = check_sql(sql)
+        assert not result.safe, sql
+        assert "id_card" in result.pii_columns, sql
+
+
+def test_pii_filters_and_count_distinct_stay_allowed():
+    # Filtering by a PII value reveals nothing; counting it is the documented
+    # exception.
+    assert check_sql("SELECT COUNT(1) AS c FROM visit WHERE id_card = 'x'").safe
+    assert check_sql("SELECT COUNT(DISTINCT id_card) AS c FROM visit").safe

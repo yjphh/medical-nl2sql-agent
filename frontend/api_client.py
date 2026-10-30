@@ -14,12 +14,17 @@ from frontend.models import Metric, QueryResponse
 
 
 class BackendError(RuntimeError):
-    """Raised for connection errors and non-2xx responses."""
+    """Raised for connection errors and non-2xx responses.
 
-    def __init__(self, status_code: int, detail: str) -> None:
+    ``kind`` lets the UI tell "the backend is down" (``connect``) from "it is
+    still working" (``timeout``, still recoverable) from a real HTTP error.
+    """
+
+    def __init__(self, status_code: int, detail: str, *, kind: str = "http") -> None:
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
+        self.kind = kind
 
 
 class BackendClient:
@@ -48,20 +53,31 @@ class BackendClient:
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         try:
             response = self._client.request(method, path, **kwargs)
+        except httpx.TimeoutException as exc:
+            raise BackendError(
+                0,
+                f"等待后端超时：{exc.__class__.__name__}",
+                kind="timeout",
+            ) from exc
+        except httpx.ConnectError as exc:
+            raise BackendError(0, f"无法连接后端（{self.base_url}）", kind="connect") from exc
         except httpx.HTTPError as exc:
-            raise BackendError(0, f"无法连接后端（{self.base_url}）：{exc}") from exc
+            raise BackendError(0, f"请求失败：{exc}", kind="network") from exc
         if response.status_code >= 400:
             raise BackendError(response.status_code, _detail(response))
         if not response.content:
             return {}
         return response.json()
 
-    def health(self, timeout: float = 2.0) -> bool:
+    def health_report(self, timeout: float = 2.0) -> dict[str, Any]:
+        """``/health`` payload: status ok/degraded plus per-check details."""
         try:
-            data = self._request("GET", "/health", timeout=timeout)
+            return self._request("GET", "/health", timeout=timeout)
         except BackendError:
-            return False
-        return data.get("status") == "ok"
+            return {"status": "unreachable"}
+
+    def health(self, timeout: float = 2.0) -> bool:
+        return self.health_report(timeout).get("status") == "ok"
 
     def create_session(self, user_id: str | None = None) -> str:
         payload = {"user_id": user_id} if user_id else {}
@@ -78,12 +94,28 @@ class BackendClient:
         data = self._request("GET", "/metrics", params=params)
         return [Metric.from_dict(item) for item in data.get("items") or []]
 
-    def ask(self, session_id: str, question: str) -> QueryResponse:
-        data = self._request(
-            "POST",
-            "/queries",
-            json={"session_id": session_id, "question": question},
-        )
+    def ask(
+        self,
+        session_id: str,
+        question: str,
+        *,
+        request_id: str | None = None,
+        mode: str = "guided",
+    ) -> QueryResponse:
+        """``request_id`` makes the call retry-safe: the same id returns the
+        existing query instead of running the graph twice.
+
+        ``mode`` is ``guided`` (clarification graph) or ``direct`` (one LLM
+        call straight to SQL).
+        """
+        payload: dict[str, Any] = {
+            "session_id": session_id,
+            "question": question,
+            "mode": mode,
+        }
+        if request_id:
+            payload["request_id"] = request_id
+        data = self._request("POST", "/queries", json=payload)
         return QueryResponse.from_dict(data)
 
     def answer(
@@ -108,8 +140,9 @@ class BackendClient:
         )
         return QueryResponse.from_dict(data)
 
-    def get_query(self, query_id: str) -> dict[str, Any]:
-        return self._request("GET", f"/queries/{query_id}")
+    def get_query(self, query_id: str) -> QueryResponse:
+        """Re-read a query the backend may already have finished or parked."""
+        return QueryResponse.from_dict(self._request("GET", f"/queries/{query_id}"))
 
 
 def _detail(response: httpx.Response) -> str:

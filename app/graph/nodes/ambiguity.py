@@ -1,5 +1,9 @@
 from app.graph.state import GraphState
 
+# Hard ceiling on clarification turns, independent of configuration: a broken
+# rule set must never keep asking forever.
+HARD_TURN_LIMIT = 5
+
 
 def _pending(state: GraphState, items: list[dict]) -> list[dict]:
     asked = set(state.get("asked_codes", []))
@@ -18,14 +22,19 @@ def run(state: GraphState, deps) -> dict:
     question = state["original_question"]
     items = list(state.get("ambiguities", []))
 
-    if getattr(deps.settings, "ambiguity_llm_supplement", True):
+    # Off by default: these items are never asked (non-blocking) and never
+    # reach the SQL prompt, so the call only costs latency.
+    if getattr(deps.settings, "ambiguity_llm_supplement", False):
         matched = [item["code"] for item in items]
         items.extend(deps.llm.supplement_ambiguities(question, matched))
 
     pending = _pending(state, items)
+    # A budget, not the number of questions: one answer can settle several
+    # codes and ``final_ambiguity_check`` may surface new ones afterwards.
+    # Tying it to ``len(pending)`` made the second phase unreachable.
     max_rounds = min(
-        getattr(deps.settings, "max_clarification_turns", 3),
-        len(pending),
+        max(0, int(getattr(deps.settings, "max_clarification_turns", 3))),
+        HARD_TURN_LIMIT,
     )
     update = {
         "ambiguities": items,

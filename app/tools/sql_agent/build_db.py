@@ -17,7 +17,7 @@ import json
 import random
 import sqlite3
 import sys
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from app.tools.sql_agent.executor import execute_readonly
@@ -30,9 +30,20 @@ DEFAULT_EXAMPLES_PATH = PROJECT_ROOT / "data" / "sql_examples_sqlite.json"
 PATIENT_COUNT = 60
 VISIT_COUNT = 240
 
+# Rows are spread over the 12 months before this date.  Keep it aligned with
+# ``settings.reference_date`` (the graph resolves "上个月" against it) and with
+# the hard-coded 2025 windows in ``data/sql_examples_sqlite.json``.
+DEFAULT_REFERENCE = datetime(2025, 12, 31)
+
+DEPARTMENTS = [("01", "内科"), ("02", "外科"), ("03", "儿科"), ("04", "妇产科")]
+
 MONEY_HINTS = ("cost", "fee", "amount", "price", "charge", "income", "revenue", "balance", "pay")
 
 CODE_POOLS: dict[str, list[tuple[str, str]]] = {
+    "dept_code": DEPARTMENTS,
+    # The schema enum only defines "1" (择期), so the generator must not emit
+    # 01-04 as the generic ``_code`` fallback used to.
+    "operation_period_type_code": [("1", "择期")],
     "modify_flag": [("1", "新增"), ("2", "修改")],
     "activity_type_code": [
         ("1", "门诊"),
@@ -142,10 +153,15 @@ def create_indexes(connection: sqlite3.Connection, schema: dict) -> None:
 # --------------------------------------------------------------------------- #
 # synthetic rows
 # --------------------------------------------------------------------------- #
-def generate_data(schema: dict, seed: int = 42) -> dict[str, list[dict]]:
+def generate_data(
+    schema: dict,
+    seed: int = 42,
+    reference_date=None,
+) -> dict[str, list[dict]]:
     rng = random.Random(seed)
+    reference = _parse_reference(reference_date)
     patients = _patient_rows(rng)
-    visits = _visit_rows(rng, patients)
+    visits = _visit_rows(rng, patients, reference)
     examinations, exams = _examination_rows(rng, visits)
     operations, operation_items = _operation_rows(rng, visits)
     data = {
@@ -193,12 +209,12 @@ def _patient_rows(rng: random.Random) -> list[dict]:
     return rows
 
 
-def _visit_rows(rng: random.Random, patients: list[dict]) -> list[dict]:
+def _visit_rows(rng: random.Random, patients: list[dict], reference: datetime) -> list[dict]:
     rows = []
     for index in range(VISIT_COUNT):
         patient = rng.choice(patients)
         activity = _pick_activity(rng)
-        arrived = _random_moment(rng)
+        arrived = _random_moment(rng, reference)
         inpatient = activity in ("5", "6", "9")
         row = {
             "dcid": f"V{index:06d}",
@@ -418,6 +434,7 @@ def _diagnose_rows(rng: random.Random, visits: list[dict]) -> list[dict]:
         if not inpatient and rng.random() > 0.2:
             continue
         code, name = rng.choice(ICD_CODES)
+        dept_code, dept_name = rng.choice(DEPARTMENTS)
         row = {
             "dcid": f"DR{len(rows):06d}",
             "id": f"DR{len(rows):06d}",
@@ -426,8 +443,8 @@ def _diagnose_rows(rng: random.Random, visits: list[dict]) -> list[dict]:
             "diag_n_osis_date": _fmt_dt(visit["_dt"]),
             "diagnose_code": code,
             "diagnose_name": name,
-            "dept_code": "DPT01",
-            "dept_name": "内科",
+            "dept_code": dept_code,
+            "dept_name": dept_name,
         }
         row.update(_person_fields(visit["_patient"]))
         row["_dt"] = visit["_dt"]
@@ -443,6 +460,12 @@ def _dict_rows() -> list[dict]:
     rows += [
         {"dict_type": "operation", "dict_code": code, "dict_label": label}
         for code, label in OPERATION_CODES
+    ]
+    # Cost-composition metrics join ``item_type_code`` against the dictionary;
+    # without these rows the joined label is NULL.
+    rows += [
+        {"dict_type": "item_type", "dict_code": code, "dict_label": label}
+        for code, label in CODE_POOLS["item_type"]
     ]
     return rows
 
@@ -582,9 +605,32 @@ def _code_label(pool: str, code: str) -> str:
     return dict(CODE_POOLS.get(pool, [])).get(code, code)
 
 
-def _random_moment(rng: random.Random) -> datetime:
-    start = datetime(2024, 12, 1)
-    span = int((datetime(2025, 4, 1) - start).total_seconds())
+def _parse_reference(value) -> datetime:
+    """Accept a date, datetime or ``YYYY-MM-DD`` string; default to the demo date."""
+    if value is None:
+        return DEFAULT_REFERENCE
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day)
+    text = str(value).strip()
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return DEFAULT_REFERENCE
+
+
+def _random_moment(rng: random.Random, reference: datetime) -> datetime:
+    """A moment in the 12 months before ``reference``.
+
+    The window must cover January 2025 because the SQLite examples filter on
+    it, and it must end near ``reference_date`` so "上个月" is not empty.
+    """
+    end = reference - timedelta(days=1)
+    start = end - timedelta(days=365)
+    span = max(1, int((end - start).total_seconds()))
     return start + timedelta(seconds=rng.randrange(span))
 
 
@@ -618,9 +664,10 @@ def build(
     schema_path: str | Path = DEFAULT_SCHEMA_PATH,
     db_path: str | Path = DEFAULT_DB_PATH,
     seed: int = 42,
+    reference_date=None,
 ) -> dict[str, int]:
     schema = json.loads(Path(schema_path).read_text(encoding="utf-8"))
-    data = generate_data(schema, seed=seed)
+    data = generate_data(schema, seed=seed, reference_date=reference_date)
     destination = Path(db_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
@@ -645,23 +692,37 @@ def verify_examples(
     max_rows: int = 50,
     timeout_s: float = 5.0,
 ) -> int:
-    """Run every SQLite example against the mirror; return the failure count."""
+    """Run every SQLite example against the mirror; return the failure count.
+
+    An example that executes but returns zero rows is a failure: it means the
+    synthetic data and the metric's filters disagree, which is exactly the bug
+    that made department/elective/last-month questions look "verified" while
+    returning nothing.
+    """
     examples = json.loads(Path(examples_path).read_text(encoding="utf-8"))["examples"]
     failures = 0
-    empty = 0
     for example in examples:
         result = execute_readonly(db_path, example["sql"], max_rows=max_rows, timeout_s=timeout_s)
         if not result.ok:
             failures += 1
-            print(f"[FAIL] {example['id']}: {result.error}")
+            print(f"[FAIL]  {example['id']}: {result.error}")
             continue
         if result.row_count == 0:
-            empty += 1
-        print(f"[ok]   {example['id']}: rows={result.row_count}")
-    if empty:
-        print(f"warning: {empty} example(s) returned no rows")
-    print(f"examples: {len(examples) - failures}/{len(examples)} executed")
+            failures += 1
+            print(f"[EMPTY] {example['id']}: 0 rows")
+            continue
+        print(f"[ok]    {example['id']}: rows={result.row_count}")
+    print(f"examples: {len(examples) - failures}/{len(examples)} executed with rows")
     return failures
+
+
+def _configured_reference() -> str | None:
+    """Read ``settings.reference_date`` without making config a hard dependency."""
+    try:
+        from app.config import settings
+    except (ImportError, AttributeError):
+        return None
+    return getattr(settings, "reference_date", None)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -669,13 +730,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--schema", default=str(DEFAULT_SCHEMA_PATH))
     parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--reference-date",
+        default=None,
+        help="Anchor for the synthetic date window (default: settings.reference_date)",
+    )
     parser.add_argument("--no-verify", action="store_true")
     args = parser.parse_args(argv)
 
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-    counts = build(schema_path=args.schema, db_path=args.db, seed=args.seed)
+    counts = build(
+        schema_path=args.schema,
+        db_path=args.db,
+        seed=args.seed,
+        reference_date=args.reference_date or _configured_reference(),
+    )
     for name, count in counts.items():
         print(f"  {name:24s} {count:5d} rows")
     print(f"built {args.db}")

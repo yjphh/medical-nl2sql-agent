@@ -27,6 +27,24 @@ def _focus_columns(terms: list[TermResolution], metrics: list[MetricInfo]) -> se
     return focus
 
 
+def _dialect_lines(declared: str | None, executable: str) -> list[str]:
+    """State the dialect the generator may use, not the warehouse's origin.
+
+    ``schema.json`` describes an Oracle-family warehouse, but this round only
+    executes SQLite.  Telling the model "方言: oracle" invites ``TO_CHAR`` /
+    ``NVL`` SQL that the SQLite parser then rejects.
+    """
+    lines = [f"- 可执行方言: {executable}（本地镜像）"]
+    if declared and declared.lower() != executable.lower():
+        lines.append(f"- 数据仓库原始方言: {declared}（本轮不生成，仅作参考）")
+    if executable.lower() == "sqlite":
+        lines.append(
+            "- 只能使用 SQLite 语法：IFNULL/COALESCE、strftime、||、LIMIT；"
+            "禁止 NVL、TO_CHAR、ROWNUM、DATE_FORMAT、反引号"
+        )
+    return lines
+
+
 def build_context(
     question: str,
     terms: list[TermResolution],
@@ -37,6 +55,7 @@ def build_context(
     glossary: Glossary,
     example_catalog: ExampleCatalog,
     max_chars: int = 8000,
+    executable_dialect: str = "sqlite",
 ) -> SchemaContext:
     table_names = schema_catalog.find_tables(terms, metrics, examples)
     focus = _focus_columns(terms, metrics)
@@ -55,7 +74,7 @@ def build_context(
         schema_text,
         "## 约束",
         "- 只生成一条只读 SELECT / WITH ... SELECT",
-        f"- 方言: {schema_catalog.dialect}",
+        *_dialect_lines(schema_catalog.dialect, executable_dialect),
         "- 不输出姓名、身份证号等 PII 列",
         "- 时间字段和指标口径不明确时，先澄清再生成",
     ]

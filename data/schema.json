@@ -2689,6 +2689,29 @@
           "description": "批次号，数据采集批次、处理批次，生成策略：机构编码_时间到秒-当天采集次数，批采集：SD2134234_20250113101512_01,SD2134234_20250113101512_02 01代表第一个次采集、02代表第二次采集以此类推",
           "nullable": false
         }
+      ],
+      "relationships": [
+        {
+          "name": "encounter_medical_cost_to_visit",
+          "to_table": "visit",
+          "on": "encounter_medical_cost.visit_id = visit.visit_id",
+          "type": "many_to_one",
+          "note": "门急诊费用挂到就诊；一个就诊可有多条费用记录",
+          "source": "ddl_fk",
+          "confidence": "high",
+          "fanout": "none"
+        },
+        {
+          "name": "encounter_medical_cost_to_qmjk_dict",
+          "to_table": "qmjk_dict",
+          "on": "encounter_medical_cost.item_type = qmjk_dict.dict_code",
+          "type": "many_to_one",
+          "note": "费用项目类型字典；dict_code 跨类型重复，必须带 dict_type 过滤",
+          "source": "manual",
+          "confidence": "medium",
+          "fanout": "none",
+          "filter": "qmjk_dict.dict_type = 'item_type'"
+        }
       ]
     },
     {
@@ -2762,6 +2785,29 @@
           "description": "修改标志",
           "nullable": true,
           "is_required": "N"
+        }
+      ],
+      "relationships": [
+        {
+          "name": "advice_cost_to_visit",
+          "to_table": "visit",
+          "on": "advice_cost.visit_id = visit.visit_id",
+          "type": "many_to_one",
+          "note": "住院医嘱费用挂到就诊；聚合费用前先按 visit_id 汇总",
+          "source": "ddl_fk",
+          "confidence": "high",
+          "fanout": "none"
+        },
+        {
+          "name": "advice_cost_to_qmjk_dict",
+          "to_table": "qmjk_dict",
+          "on": "advice_cost.item_type_code = qmjk_dict.dict_code",
+          "type": "many_to_one",
+          "note": "费用项目类型字典；dict_code 跨类型重复，必须带 dict_type 过滤",
+          "source": "manual",
+          "confidence": "medium",
+          "fanout": "none",
+          "filter": "qmjk_dict.dict_type = 'item_type'"
         }
       ]
     },

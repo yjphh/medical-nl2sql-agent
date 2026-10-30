@@ -1,14 +1,4 @@
-<<<<<<< HEAD
-<<<<<<< HEAD
-.idea/
-.venv/
-__pycache__/
-.env
-*.pyc
-=======
 # Byte-compiled / optimized / DLL files
-=======
->>>>>>> 005007ac1a26ea3f624369a54a34d97ba97c22a6
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -17,12 +7,12 @@ dist/
 build/
 .venv/
 venv/
-.env
 .idea/
 .vscode/
 .pytest_cache/
 .ruff_cache/
-<<<<<<< HEAD
+
+.env
 
 # PyPI configuration file
 .pypirc
@@ -34,13 +24,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
->>>>>>> 775dab404d8a8de5547757c20cf550fc68a47d44
-=======
+
 *.log
 .DS_Store
 data/synthetic/*
 !data/synthetic/.gitkeep
+# SQLite runtime files (sessions / checkpoints) and their WAL side files.
 *.db
+*.db-shm
+*.db-wal
+*.db-journal
 .coverage
 htmlcov/
->>>>>>> 005007ac1a26ea3f624369a54a34d97ba97c22a6

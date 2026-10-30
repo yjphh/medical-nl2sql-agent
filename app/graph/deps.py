@@ -28,5 +28,7 @@ def build_deps(
         model=app_settings.llm_model,
         api_key=app_settings.llm_api_key,
         base_url=app_settings.llm_base_url,
+        timeout=getattr(app_settings, "llm_timeout_seconds", 30.0),
+        max_retries=getattr(app_settings, "llm_max_retries", 1),
     )
     return GraphDeps(knowledge=knowledge, llm=llm, settings=app_settings)

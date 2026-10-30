@@ -49,6 +49,7 @@ def test_ask_parses_clarification():
         assert json.loads(request.content) == {
             "session_id": "s1",
             "question": "上个月门诊人次是多少",
+            "mode": "guided",
         }
         return httpx.Response(200, json=clarification_payload())
 
@@ -63,6 +64,19 @@ def test_ask_parses_clarification():
         "last_30_days",
     ]
     assert response.clarification.option_label("last_30_days") == "最近30天"
+
+
+def test_ask_sends_direct_mode():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update(json.loads(request.content))
+        return httpx.Response(200, json=clarification_payload())
+
+    with make_client(handler) as client:
+        client.ask("s1", "你好", mode="direct")
+
+    assert captured["mode"] == "direct"
 
 
 def test_answer_sends_option_id():
@@ -136,6 +150,48 @@ def test_connection_error_is_mapped_to_backend_error():
         with pytest.raises(BackendError) as excinfo:
             client.ask("s1", "问题")
     assert excinfo.value.status_code == 0
+    assert excinfo.value.kind == "connect"
+
+
+def test_timeout_is_distinguishable_from_connection_loss():
+    """A timeout means "still working", not "backend down"."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow", request=request)
+
+    with make_client(handler) as client, pytest.raises(BackendError) as excinfo:
+        client.ask("s1", "问题")
+
+    assert excinfo.value.kind == "timeout"
+    assert excinfo.value.status_code == 0
+
+
+def test_ask_sends_client_request_id_for_recovery():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update(json.loads(request.content))
+        payload = clarification_payload()
+        payload["query_id"] = captured["request_id"]
+        return httpx.Response(200, json=payload)
+
+    with make_client(handler) as client:
+        response = client.ask("s1", "问题", request_id="6f1b1b9e-0000-4000-8000-000000000001")
+
+    assert captured["request_id"] == "6f1b1b9e-0000-4000-8000-000000000001"
+    assert response.query_id == captured["request_id"]
+
+
+def test_get_query_returns_a_typed_response():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/queries/q1"
+        return httpx.Response(200, json=clarification_payload())
+
+    with make_client(handler) as client:
+        response = client.get_query("q1")
+
+    assert response.is_waiting
+    assert response.clarification.code == "time_range"
 
 
 def test_health():
@@ -144,6 +200,30 @@ def test_health():
 
     with make_client(ok) as client:
         assert client.health() is True
+
+
+def test_health_report_surfaces_degraded_backend():
+    """A reachable backend with a missing database is not "connected"."""
+
+    def degraded(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "status": "degraded",
+            "message": "后端未就绪：database 不可用。 修复：python -m app.tools.sql_agent.build_db",
+        })
+
+    with make_client(degraded) as client:
+        assert client.health() is False
+        report = client.health_report()
+    assert report["status"] == "degraded"
+    assert "build_db" in report["message"]
+
+
+def test_health_report_when_backend_is_down():
+    def refused(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    with make_client(refused) as client:
+        assert client.health_report()["status"] == "unreachable"
 
 
 def test_list_metrics():

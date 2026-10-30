@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install (backend + dev + frontend)
+        # tests/frontend imports streamlit, which is not a backend dependency.
+        run: |
+          pip install -e ".[dev]"
+          pip install -r frontend/requirements.txt
+
+      - name: Lint
+        run: ruff check app frontend tests
+
+      - name: Test
+        # No API key and no network: the graph tests use tests/fakes.py, and the
+        # SQLite mirror is built inside the tests that need it.
+        run: pytest tests -q
+        env:
+          LLM_API_KEY: ""

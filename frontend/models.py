@@ -105,6 +105,8 @@ class QueryResponse:
     status: str
     sql: str | None = None
     sql_source: str | None = None
+    sql_confidence: float | None = None
+    sql_result_empty: bool = False
     clarification: Clarification | None = None
     assumptions: list[Assumption] = field(default_factory=list)
     clarification_history: list[dict[str, Any]] = field(default_factory=list)
@@ -121,6 +123,8 @@ class QueryResponse:
             status=str(data.get("status", "error")),
             sql=data.get("sql"),
             sql_source=data.get("sql_source"),
+            sql_confidence=data.get("sql_confidence"),
+            sql_result_empty=bool(data.get("sql_result_empty", False)),
             clarification=(
                 Clarification.from_dict(raw_clarification)
                 if isinstance(raw_clarification, dict)

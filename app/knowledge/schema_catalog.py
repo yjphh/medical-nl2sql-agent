@@ -9,6 +9,8 @@ from app.knowledge.models import (
     TermResolution,
 )
 
+MONEY_HINTS = ("cost", "fee", "amount", "price", "charge", "income", "revenue", "balance", "pay")
+
 
 class SchemaCatalog:
     def __init__(self, tables: list[TableInfo], dialect: str = "oracle") -> None:
@@ -117,7 +119,7 @@ class SchemaCatalog:
                 continue
             pk = set(table.primary_key)
 
-            def priority(col) -> tuple[int, int]:
+            def priority(col, table=table, pk=pk) -> tuple[int, int]:
                 key = f"{table.name}.{col.name}"
                 if col.name in pk or key in join_columns or key in focus_columns:
                     return (0, 0)
@@ -125,8 +127,13 @@ class SchemaCatalog:
                     return (1, 0)
                 if col.enum_values:
                     return (2, 0)
-                if col.is_pii:
+                # Money columns carry the metric formula (total_cost /
+                # outpatient_cost / hospitalization_total_cost); ranking PII
+                # first used to push them out of the 25-column budget.
+                if any(hint in col.name.lower() for hint in MONEY_HINTS):
                     return (3, 0)
+                if col.is_pii:
+                    return (5, 0)
                 return (4, 0)
 
             ordered = sorted(

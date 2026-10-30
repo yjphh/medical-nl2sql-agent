@@ -87,7 +87,9 @@ def check_sql(
         expression = projection.this if isinstance(projection, exp.Alias) else projection
         if isinstance(expression, exp.Count):
             continue
-        if isinstance(expression, exp.Star):
+        # ``t.*`` parses as a Column wrapping a Star, so a plain isinstance
+        # check on the projection missed it.
+        if expression.find(exp.Star) is not None:
             exposed.append("*")
             continue
         for column in expression.find_all(exp.Column):
@@ -97,6 +99,14 @@ def check_sql(
                 continue
             if column.name.lower() in pii:
                 exposed.append(column.name.lower())
+
+    # A PII column in GROUP BY / ORDER BY / HAVING leaks the same values as
+    # selecting it (row order and cardinality reveal them).
+    for select in _output_selects(statement):
+        for clause in (*select.find_all(exp.Group), *select.find_all(exp.Order), *select.find_all(exp.Having)):
+            for column in clause.find_all(exp.Column):
+                if column.name.lower() in pii and not _under_count(column):
+                    exposed.append(column.name.lower())
 
     if exposed:
         reason = "select_star_pii_risk" if "*" in exposed else "pii_in_select"
@@ -109,11 +119,26 @@ def check_sql(
     return SafetyResult(safe=True, tables=tables)
 
 
-def _projections(statement: exp.Expression) -> list[exp.Expression]:
+def _output_selects(statement: exp.Expression) -> list[exp.Select]:
+    """The SELECT branches whose rows the statement actually returns.
+
+    Walks UNION operands instead of ``find(exp.Select)``, which only returned
+    the first branch, and stops at the output level so CTE bodies are not
+    mistaken for output columns.
+    """
     if isinstance(statement, exp.Select):
-        return list(statement.expressions)
-    select = statement.find(exp.Select)
-    return list(select.expressions) if select is not None else []
+        return [statement]
+    if isinstance(statement, exp.Union):
+        return _output_selects(statement.this) + _output_selects(statement.expression)
+    return []
+
+
+def _projections(statement: exp.Expression) -> list[exp.Expression]:
+    return [
+        projection
+        for select in _output_selects(statement)
+        for projection in select.expressions
+    ]
 
 
 def _under_count(node: exp.Expression) -> bool:

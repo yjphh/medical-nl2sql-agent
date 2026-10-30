@@ -80,6 +80,10 @@ def plan(state: GraphState, deps) -> dict:
         return {"pending_question": None, "pending_codes": []}
     item = remaining[0]
     code = item["code"]
+    round_no = state.get("clarification_round", 0) + 1
+    # ``max_rounds`` in state is the turn budget; the card should still say
+    # "1/2" when only two questions are actually going to be asked.
+    budget = state.get("max_rounds", 3)
 
     options, default_option_id = _options_for(state, item)
     pending = {
@@ -91,8 +95,8 @@ def plan(state: GraphState, deps) -> dict:
         "default_option_id": default_option_id,
         "allow_free_text": True,
         "can_skip": True,
-        "round": state.get("clarification_round", 0) + 1,
-        "max_rounds": state.get("max_rounds", 3),
+        "round": round_no,
+        "max_rounds": min(budget, round_no + len(remaining) - 1),
     }
 
     if code in POLISH_CODES and getattr(deps.settings, "clarify_llm_polish", True):
