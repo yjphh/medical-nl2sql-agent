@@ -212,7 +212,7 @@ def test_unknown_query_returns_404():
     assert response.status_code == 404
 
 
-def test_health_probes_database_and_knowledge():
+def test_health_probes_database_and_knowledge(mirror_settings):
     response = client.get("/health")
     assert response.status_code == 200
     body = response.json()
