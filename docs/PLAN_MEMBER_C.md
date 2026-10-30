@@ -670,7 +670,8 @@ MAX_REPAIR_ROUNDS=2
 ```
 
 LLM 复用现有的 `LLM_API_KEY` / `LLM_MODEL` / `LLM_BASE_URL`。  
-`pyproject.toml` 需要增加 `openai`（现有依赖里没有）。
+DeepSeek 默认：`LLM_MODEL=deepseek-chat`，`LLM_BASE_URL=https://api.deepseek.com`。  
+C 用 `openai` SDK 作为 OpenAI-compatible 客户端；`langchain-deepseek` 只给 B 用。
 
 ## 7. 开发顺序（4 天）
 
