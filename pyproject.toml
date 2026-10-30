@@ -8,8 +8,8 @@ dependencies = [
     "uvicorn",
     "pydantic",
     "pydantic-settings",
-    "sqlalchemy",
     "langgraph",
+    "langgraph-checkpoint-sqlite",
     "langchain-core",
     "langchain-deepseek",
     "openai",
@@ -20,14 +20,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest",
-    "pytest-asyncio",
     "httpx",
     "ruff",
-]
-# Only needed for one-off Excel -> JSON conversion scripts.
-data = [
-    "pandas",
-    "openpyxl",
 ]
 
 [build-system]

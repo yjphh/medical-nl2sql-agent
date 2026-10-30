@@ -81,6 +81,20 @@ def test_rewritten_question_and_schema_links_reach_the_llm():
     assert call["schema_links"] == links
 
 
+def test_empty_result_is_low_confidence_and_explained():
+    """A stable empty result is executable, not trustworthy."""
+    sql_llm = FakeSQLAgentLLM([[{"sql": SQL_OK}]])
+    result = _parent(sql_llm, FakeExecutor(rows_by_sql={SQL_OK: []})).invoke({
+        "original_question": "各科室门诊人次",
+        "schema_context": SCHEMA_CONTEXT,
+    })
+
+    assert result["status"] == "ok"
+    assert result["sql_result_empty"] is True
+    assert result["sql_confidence"] == 0.3
+    assert any("0 行" in text for text in result["sql_assumptions"])
+
+
 def test_result_rows_never_reach_the_parent_state():
     sql_llm = FakeSQLAgentLLM([[{"sql": SQL_OK}]])
     executor = FakeExecutor(rows_by_sql={SQL_OK: [("PATIENT-SECRET",)]})

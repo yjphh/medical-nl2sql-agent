@@ -156,10 +156,13 @@ def check(state: GraphState, deps) -> dict:
     # SQL prompt still shows which interpretation was assumed.
     assumptions = list(state.get("assumptions", []))
     known = {a.get("code") for a in assumptions}
+    added: list[str] = []
     for item in new_items:
         if item.get("code") in known:
             continue
         default = item.get("default", "")
+        if not default:
+            continue
         assumptions.append({
             "code": item["code"],
             "value": default,
@@ -167,8 +170,9 @@ def check(state: GraphState, deps) -> dict:
             "source": "default",
             "reason": "max_rounds",
         })
+        added.append(f"{item.get('code')}：{default}")
 
-    return {
+    update: dict = {
         "final_ambiguities": [],
         "assumptions": assumptions,
         "trace": [{
@@ -177,3 +181,11 @@ def check(state: GraphState, deps) -> dict:
             "unresolved": len(new_items),
         }],
     }
+    # A default that is only listed in ``assumptions`` never reaches the model:
+    # it would guess the same ambiguity again, differently.
+    if added:
+        rewritten = state.get("rewritten_question") or state["original_question"]
+        update["rewritten_question"] = (
+            f"{rewritten}\n未澄清项按默认口径：" + "；".join(added) + "。"
+        )
+    return update

@@ -30,7 +30,7 @@ class ColumnInfo:
     is_required: str | None = None
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ColumnInfo":
+    def from_dict(cls, data: dict[str, Any]) -> ColumnInfo:
         return cls(**_filtered(cls, data))
 
     def to_dict(self) -> dict[str, Any]:
@@ -51,7 +51,7 @@ class RelationshipInfo:
     from_table: str | None = None
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "RelationshipInfo":
+    def from_dict(cls, data: dict[str, Any]) -> RelationshipInfo:
         return cls(**_filtered(cls, data))
 
     def to_dict(self) -> dict[str, Any]:
@@ -68,7 +68,7 @@ class TableInfo:
     relationships: list[RelationshipInfo] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "TableInfo":
+    def from_dict(cls, data: dict[str, Any]) -> TableInfo:
         payload = _filtered(cls, data)
         payload["columns"] = [ColumnInfo.from_dict(c) for c in data.get("columns", [])]
         payload["relationships"] = [
@@ -99,7 +99,7 @@ class MetricInfo:
     unit: str = ""
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "MetricInfo":
+    def from_dict(cls, data: dict[str, Any]) -> MetricInfo:
         return cls(**_filtered(cls, data))
 
     def to_dict(self) -> dict[str, Any]:
@@ -118,7 +118,7 @@ class TermInfo:
     values: list[str] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "TermInfo":
+    def from_dict(cls, data: dict[str, Any]) -> TermInfo:
         return cls(**_filtered(cls, data))
 
     def to_dict(self) -> dict[str, Any]:
@@ -139,7 +139,7 @@ class AmbiguityRule:
     related_metrics: list[str] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "AmbiguityRule":
+    def from_dict(cls, data: dict[str, Any]) -> AmbiguityRule:
         return cls(**_filtered(cls, data))
 
     def to_dict(self) -> dict[str, Any]:
@@ -157,7 +157,7 @@ class SQLExample:
     notes: str = ""
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "SQLExample":
+    def from_dict(cls, data: dict[str, Any]) -> SQLExample:
         return cls(**_filtered(cls, data))
 
     def to_dict(self) -> dict[str, Any]:
@@ -176,7 +176,7 @@ class GoldItem:
     notes: str = ""
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "GoldItem":
+    def from_dict(cls, data: dict[str, Any]) -> GoldItem:
         return cls(**_filtered(cls, data))
 
     def to_dict(self) -> dict[str, Any]:

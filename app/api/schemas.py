@@ -1,4 +1,5 @@
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -34,6 +35,12 @@ class Assumption(BaseModel):
 class QueryRequest(BaseModel):
     session_id: str
     question: str = Field(min_length=1, max_length=2000)
+    # Clients may pick the id so a timed-out request can be fetched later with
+    # GET /queries/{id} instead of being re-asked from scratch.
+    request_id: UUID | None = None
+    # ``guided`` runs the clarification graph; ``direct`` asks the model once
+    # and only verifies the SQL on the mirror (no clarifying questions).
+    mode: Literal["guided", "direct"] = "guided"
 
 
 class QueryResponse(BaseModel):
@@ -42,6 +49,8 @@ class QueryResponse(BaseModel):
     status: Literal["ok", "needs_clarification", "error"]
     sql: str | None = None
     sql_source: str | None = None
+    sql_confidence: float | None = None
+    sql_result_empty: bool = False
     schema_links: list[dict[str, Any]] = Field(default_factory=list)
     clarification: Clarification | None = None
     assumptions: list[Assumption] = Field(default_factory=list)
@@ -69,11 +78,3 @@ class SessionCreate(BaseModel):
 class SessionOut(BaseModel):
     session_id: str
     user_id: str | None = None
-
-
-class QueryStatusOut(BaseModel):
-    session_id: str
-    query_id: str
-    question: str
-    status: str
-    sql: str | None = None

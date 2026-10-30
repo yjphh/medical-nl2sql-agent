@@ -46,7 +46,7 @@ def default_executor(deps):
     )
 
 
-def _allowed_tables() -> list[str] | None:
+def schema_allowed_tables() -> list[str] | None:
     try:
         return [table["name"] for table in load_schema()["tables"]]
     except (OSError, ValueError, KeyError):
@@ -93,8 +93,60 @@ def _assumptions(result: GenerationResult) -> list[str]:
     else:
         notes.append(f"候选结果不一致，已按静态分选优：{result.reason}")
     if result.result_empty:
-        notes.append("查询结果为空，可能确实没有符合条件的数据")
+        notes.append(
+            "SQL 可执行，但在镜像上命中 0 行：可能是时间范围、科室/类型过滤或统计数据缺失，"
+            "请核对后再使用"
+        )
     return notes
+
+
+def state_from_result(result: GenerationResult, *, node: str = "generate_sql") -> dict:
+    """Map a ``GenerationResult`` onto response-compatible state fields.
+
+    Shared by the graph subgraph and the direct (no-clarification) mode so the
+    confidence / empty-result rules only live in one place.
+    """
+    stats = {
+        "llm_calls": result.stats.get("llm_calls", 0),
+        "executions": result.stats.get("executions", 0),
+        "repairs": result.stats.get("repairs", 0),
+        "elapsed_ms": result.stats.get("elapsed_ms", 0),
+    }
+    if not result.sql:
+        return {
+            "sql": None,
+            "sql_source": "sqlite",
+            "status": "error",
+            "error": {
+                "code": "sql_generation_failed",
+                "message": result.error or "empty_sql",
+            },
+            "trace": [{"node": node, "ok": False, **stats}],
+        }
+
+    counts = {
+        "candidates": len(result.candidates),
+        "verified": result.verified,
+        "result_empty": result.result_empty,
+        "reason": result.reason,
+        "result_hash": next(
+            (item.result_hash for item in result.candidates if item.sql == result.sql),
+            "",
+        ),
+    }
+    # Candidate consensus alone must not imply correctness: a stable empty
+    # result is still an unverified answer.
+    confidence = 0.3 if result.result_empty else (0.9 if result.verified else 0.5)
+    return {
+        "sql": result.sql,
+        "sql_source": "sqlite",
+        "sql_assumptions": _assumptions(result),
+        "sql_confidence": confidence,
+        "sql_result_empty": result.result_empty,
+        "status": "ok",
+        "error": None,
+        "trace": [{"node": node, "ok": True, **counts, **stats}],
+    }
 
 
 def run(state: GraphState, deps, *, llm, executor, examples=None, allowed_tables=None) -> dict:
@@ -112,44 +164,7 @@ def run(state: GraphState, deps, *, llm, executor, examples=None, allowed_tables
         max_repair_rounds=getattr(app_settings, "max_repair_rounds", 2),
         allowed_tables=allowed_tables,
     )
-
-    stats = {
-        "llm_calls": result.stats.get("llm_calls", 0),
-        "executions": result.stats.get("executions", 0),
-        "repairs": result.stats.get("repairs", 0),
-        "elapsed_ms": result.stats.get("elapsed_ms", 0),
-    }
-    if not result.sql:
-        return {
-            "sql": None,
-            "sql_source": "sqlite",
-            "status": "error",
-            "error": {
-                "code": "sql_generation_failed",
-                "message": result.error or "empty_sql",
-            },
-            "trace": [{"node": "generate_sql", "ok": False, **stats}],
-        }
-
-    counts = {
-        "candidates": len(result.candidates),
-        "verified": result.verified,
-        "result_empty": result.result_empty,
-        "reason": result.reason,
-        "result_hash": next(
-            (item.result_hash for item in result.candidates if item.sql == result.sql),
-            "",
-        ),
-    }
-    return {
-        "sql": result.sql,
-        "sql_source": "sqlite",
-        "sql_assumptions": _assumptions(result),
-        "sql_confidence": 0.9 if result.verified else 0.5,
-        "status": "ok",
-        "error": None,
-        "trace": [{"node": "generate_sql", "ok": True, **counts, **stats}],
-    }
+    return state_from_result(result)
 
 
 def build_sql_subgraph(
@@ -172,7 +187,7 @@ def build_sql_subgraph(
         else getattr(deps, "sql_executor", None) or default_executor(deps)
     )
     if allowed_tables is None:
-        allowed_tables = _allowed_tables()
+        allowed_tables = schema_allowed_tables()
 
     graph = StateGraph(GraphState)
     graph.add_node(

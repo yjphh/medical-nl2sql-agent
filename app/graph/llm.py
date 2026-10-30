@@ -7,6 +7,7 @@ tests can inject a deterministic fake.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -19,6 +20,8 @@ from app.prompts.analyze import build_analyze_prompt
 from app.prompts.base import SYSTEM_PROMPT
 from app.prompts.clarify import build_clarify_prompt
 from app.prompts.sql import build_sql_prompt
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -58,11 +61,17 @@ class DeepSeekLLMClient:
         api_key: str = "",
         base_url: str = "https://api.deepseek.com",
         temperature: float = 0.2,
+        timeout: float = 30.0,
+        max_retries: int = 1,
     ) -> None:
         self._model = model
         self._api_key = api_key or None
         self._base_url = base_url or None
         self._temperature = temperature
+        # Without an explicit timeout the SDK can hang for minutes and hold
+        # the whole request (and the event loop) open.
+        self._timeout = timeout
+        self._max_retries = max_retries
         self._llm: ChatDeepSeek | None = None
 
     @property
@@ -75,6 +84,8 @@ class DeepSeekLLMClient:
                 api_key=self._api_key,
                 base_url=self._base_url,
                 temperature=self._temperature,
+                timeout=self._timeout,
+                max_retries=self._max_retries,
             )
         return self._llm
 
@@ -86,7 +97,14 @@ class DeepSeekLLMClient:
             ])
             content = result.content
             return content if isinstance(content, str) else str(content)
-        except Exception:  # noqa: BLE001 - degrade instead of failing the request
+        except Exception as exc:  # noqa: BLE001 - degrade instead of failing the request
+            # Degrading is fine; degrading silently is not.
+            logger.warning(
+                "llm call failed (%s): %s: %s",
+                self._model,
+                type(exc).__name__,
+                exc,
+            )
             return ""
 
     def choose_metric(self, question: str, candidates: list, context: str) -> str | None:

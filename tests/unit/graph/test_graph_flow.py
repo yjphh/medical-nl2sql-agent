@@ -29,11 +29,11 @@ def knowledge():
     return FileKnowledgeProvider("data")
 
 
-def make_graph(knowledge_provider, llm, sql_llm=None, executor=None):
+def make_graph(knowledge_provider, llm, sql_llm=None, executor=None, app_settings=None):
     deps = GraphDeps(
         knowledge=knowledge_provider,
         llm=llm,
-        settings=settings,
+        settings=app_settings or settings,
         sql_llm=sql_llm or FakeSQLAgentLLM([], default_batch=[{"sql": DEFAULT_SQL}]),
         sql_executor=executor or FakeExecutor(),
     )
@@ -88,10 +88,13 @@ def test_two_round_clarification_then_sql(knowledge):
 
     result = graph.invoke({"original_question": "上个月门诊人次是多少"}, config=cfg)
     assert result["status"] == "needs_clarification"
-    assert result["max_rounds"] == 2
+    # ``max_rounds`` in state is the turn budget (a safety cap); the card shows
+    # how many questions this conversation actually needs.
+    assert result["max_rounds"] == 3
     question = first_question(result)
     assert question["code"] == "time_range"
     assert question["round"] == 1
+    assert question["max_rounds"] == 2
     assert [o["id"] for o in question["options"]] == ["natural_month", "last_30_days"]
     assert question["default_option_id"] == "natural_month"
     # No SQL yet.
@@ -232,6 +235,8 @@ def test_sql_failure_returns_error(knowledge):
 
 
 def test_llm_supplement_adds_non_blocking_ambiguity(knowledge):
+    # Opt-in only (the default is off: these items are never asked and never
+    # reach the SQL prompt).
     llm = FakeLLMClient(
         supplements=[{
             "code": "llm_semantic_x",
@@ -245,11 +250,115 @@ def test_llm_supplement_adds_non_blocking_ambiguity(knowledge):
             "source": "llm",
         }],
     )
-    result = make_graph(knowledge, llm).invoke(
-        {"original_question": "2025年1月急诊人次"}, config=config()
-    )
+    result = make_graph(
+        knowledge,
+        llm,
+        app_settings=settings.model_copy(update={"ambiguity_llm_supplement": True}),
+    ).invoke({"original_question": "2025年1月急诊人次"}, config=config())
 
     assert "__interrupt__" not in result
     assert result["status"] == "ok"
     codes = [item["code"] for item in result["ambiguities"]]
     assert "llm_semantic_x" in codes
+
+
+def test_trace_accumulates_every_node(knowledge):
+    """Without a reducer each node overwrote the debug trace."""
+    sql_llm = FakeSQLAgentLLM([], default_batch=[{"sql": DEFAULT_SQL}])
+    result = make_graph(knowledge, FakeLLMClient(), sql_llm=sql_llm).invoke(
+        {"original_question": "2025年1月急诊人次"}, config=config()
+    )
+
+    nodes = [item["node"] for item in result["trace"]]
+    assert nodes[0] == "analyze_question"
+    assert "generate_sql" in nodes
+    assert len(nodes) >= 3
+
+
+class _LateAmbiguityProvider(FakeKnowledgeProvider):
+    """Rules find one ambiguity up front; the final check surfaces a new one.
+
+    Mirrors the real failure mode: the rewrite adds a term that triggers a rule
+    nobody had asked about yet.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            ambiguities=[{
+                "code": "time_range",
+                "category": "time",
+                "question": "自然月还是最近30天？",
+                "options": ["自然月", "最近30天"],
+                "default": "自然月",
+                "blocking": True,
+                "priority": 1,
+            }]
+        )
+        self.late = {
+            "code": "patient_scope",
+            "category": "scope",
+            "question": "出院还是全部？",
+            "options": ["出院", "全部"],
+            "default": "全部",
+            "blocking": True,
+            "priority": 2,
+        }
+        self.calls = 0
+
+    def detect_ambiguities(self, question, terms=None, asked_codes=None):
+        from app.knowledge.models import AmbiguityReport
+
+        self.calls += 1
+        items = list(self.ambiguities)
+        if self.calls > 1:
+            items.append(self.late)
+        return AmbiguityReport(items=items, has_blocking=True)
+
+
+def test_final_check_can_ask_new_ambiguity():
+    """Phase two of the clarification strategy used to be unreachable."""
+    provider = _LateAmbiguityProvider()
+    sql_llm = FakeSQLAgentLLM([], default_batch=[{"sql": DEFAULT_SQL}])
+    graph = make_graph(provider, FakeLLMClient(), sql_llm=sql_llm)
+    cfg = config()
+
+    result = graph.invoke({"original_question": "上个月出院人次"}, config=cfg)
+    assert first_question(result)["code"] == "time_range"
+
+    result = graph.invoke(Command(resume=answer(result, "natural_month")), config=cfg)
+    # The final check discovered ``patient_scope`` and asked it instead of
+    # silently defaulting it.
+    question = first_question(result)
+    assert question["code"] == "patient_scope"
+    assert question["round"] == 2
+
+    result = graph.invoke(Command(resume=answer(result, "discharge")), config=cfg)
+    assert result["status"] == "ok"
+    assert [h["code"] for h in result["clarification_history"]] == [
+        "time_range",
+        "patient_scope",
+    ]
+    assert sql_llm.generate_calls
+
+
+def test_unasked_defaults_reach_the_sql_prompt():
+    """A default that only lived in ``assumptions`` was invisible to the model."""
+    provider = _LateAmbiguityProvider()
+    sql_llm = FakeSQLAgentLLM([], default_batch=[{"sql": DEFAULT_SQL}])
+    graph = make_graph(
+        provider,
+        FakeLLMClient(),
+        sql_llm=sql_llm,
+        app_settings=settings.model_copy(update={"max_clarification_turns": 1}),
+    )
+    cfg = config()
+
+    result = graph.invoke({"original_question": "上个月出院人次"}, config=cfg)
+    result = graph.invoke(Command(resume=answer(result, "natural_month")), config=cfg)
+
+    assert result["status"] == "ok"
+    assumption = next(a for a in result["assumptions"] if a["code"] == "patient_scope")
+    assert assumption["source"] == "default"
+    prompt_question = sql_llm.generate_calls[0]["question"]
+    assert "未澄清项按默认口径" in prompt_question
+    assert "patient_scope：全部" in prompt_question
