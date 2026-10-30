@@ -8,6 +8,7 @@ what was asked.
 from __future__ import annotations
 
 from app.graph.llm import SQLResult
+from app.tools.sql_agent.executor import ExecutionResult
 
 
 class FakeLLMClient:
@@ -106,4 +107,69 @@ class FakeKnowledgeProvider:
             join_paths=[],
             prompt_text="schema",
             char_count=6,
+        )
+
+
+class FakeSQLAgentLLM:
+    """Queue-driven fake for ``app.tools.sql_agent.core``.
+
+    Each entry in ``batches`` is returned by one ``generate_candidates`` call;
+    ``repairs`` is consumed one entry per ``repair`` call.  No network.
+    """
+
+    def __init__(
+        self,
+        batches: list[list[dict]],
+        repairs: list[dict] | None = None,
+        *,
+        default_batch: list[dict] | None = None,
+    ) -> None:
+        self.batches = [list(batch) for batch in batches]
+        self.repairs = list(repairs or [])
+        self.default_batch = None if default_batch is None else list(default_batch)
+        self.generate_calls: list[dict] = []
+        self.repair_calls: list[dict] = []
+
+    def generate_candidates(
+        self, question, schema_context, *, examples=None, n=1, schema_links=None, repair=None
+    ):
+        self.generate_calls.append({
+            "question": question,
+            "n": n,
+            "repair": repair,
+            "schema_links": schema_links,
+        })
+        if self.batches:
+            return self.batches.pop(0)
+        if self.default_batch is not None:
+            return list(self.default_batch)
+        return []
+
+    def repair(self, question, sql, error, schema_context, *, examples=None):
+        self.repair_calls.append({"sql": sql, "error": error})
+        return self.repairs.pop(0) if self.repairs else {"sql": sql}
+
+
+class FakeExecutor:
+    """Map SQL to rows or to an error, recording every execution."""
+
+    def __init__(
+        self,
+        rows_by_sql: dict[str, list[tuple]] | None = None,
+        errors_by_sql: dict[str, str] | None = None,
+    ) -> None:
+        self.rows_by_sql = dict(rows_by_sql or {})
+        self.errors_by_sql = dict(errors_by_sql or {})
+        self.calls: list[str] = []
+
+    def __call__(self, sql: str) -> ExecutionResult:
+        self.calls.append(sql)
+        if sql in self.errors_by_sql:
+            return ExecutionResult(ok=False, error=self.errors_by_sql[sql])
+        rows = self.rows_by_sql.get(sql, [("1",)])
+        return ExecutionResult(
+            ok=True,
+            columns=["value"],
+            rows=rows,
+            row_count=len(rows),
         )

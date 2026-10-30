@@ -16,6 +16,7 @@ class GraphState(TypedDict, total=False):
     selected_metric_id: str | None
     intent: dict[str, Any]
     schema_context: dict[str, Any]
+    schema_links: list[dict[str, Any]]
     ambiguities: list[dict[str, Any]]
     resolved_codes: list[str]
 
@@ -35,7 +36,7 @@ class GraphState(TypedDict, total=False):
 
     # SQL output
     sql: str | None
-    sql_source: Literal["deepseek"] | None
+    sql_source: Literal["deepseek", "sqlite"] | None
     sql_assumptions: list[str]
     sql_confidence: float | None
 

@@ -1,757 +1,355 @@
-# 组员 C 开发计划：ReFoRCE-lite（多候选 + SQLite 自修正）
+# 组员 C 开发计划：SQL 生成子图（LangGraph 子图 + 多候选执行自修正）
 
-> 目标：B 给出澄清后的完整问题，C 用**纯 Python**实现一个简化版 ReFoRCE agent：
-> 多候选生成 → SQLite 执行 → 错误回传修正 → 结果集投票 → 返回最终 SQL。
+> 目标：B 给出澄清后的完整问题 + 模式链接结果，C 用 **LangGraph 子图**实现 SQL 生成：
+> 问题评估（决定候选数）→ 多候选生成 → SQLite 执行/修正 → 结果投票/校验 → 返回最终 SQL。
 >
-> 不使用 LangChain / LangGraph；不接官方 ReFoRCE；暂不做评测。
+> 本轮只生成 **SQLite SQL**，在本地 SQLite 镜像上执行验证；不接官方 ReFoRCE、不连真实库。
+>
+> 相比旧版（纯 Python ReFoRCE-lite）的三个改动：
+> 1. 生成模块改成 **LangGraph 子图**（与澄清子图同构）；
+> 2. 澄清后不只返回有效问题，**同时返回模式链接结果**（涉及的表/列/关系）；
+> 3. 子图核心流程：多候选 → 执行 → 错误回传修正 → 结果投票/校验（升级第 3 条）。
+>
+> **实现约束（2026-10-30 评估后补充）**：子图与父图 state schema 不一致时，子图输出中父图没有的 key 会被 LangGraph **静默丢弃**（已实测）。因此本计划要求子图**共用父图 `GraphState`**，或经 wrapper 显式映射——详见 §3.1、§6.1。这是能否直接接入 B 的前提。
 
 ## 1. 分工边界
 
-- **A**：提供 `data/schema.json`（数据库模式 + 业务口径 + 字段说明）和 `data/sql_examples_sqlite.json`（已改写成 SQLite 方言的示例 SQL）。
-- **B**：多轮追问澄清后，输出一条**完整、无歧义的问题**；问题涉及的字段都在 A 的 schema 里。
-- **C**：接收问题，读 A 的 schema，生成 SQLite SQL；在本地 SQLite 镜像上执行、自修正、多候选投票；返回最终 SQL。
-- C 不负责追问、不做评测、不连接真实生产库。
+- **A**：`data/schema.json`（13 表、13 关系）、`data/sql_examples_sqlite.json`（15 条 SQLite 示例）、（待交付）`data/gold_sql_sqlite.json`。
+- **B**：多轮澄清 → 输出 `rewritten_question`（完整问题）+ `schema_links`（模式链接结果）；调用 C 的子图；API 响应里带 `schema_links`。
+- **C**：接收 `question + schema_links`，生成 SQLite SQL；SQLite 镜像执行、自修正、多候选投票；返回最终 SQL + 验证状态。
+- C 不负责追问、不做评测、不连真实生产库、不 import `app/graph`。
 
 ## 2. 目录结构
 
 ```text
-app/tools/sql_agent/
+app/tools/sql_agent/            # C 的纯 Python 核心（不 import langgraph / app.graph）
 ├── __init__.py
-├── build_db.py       # schema.json -> SQLite 镜像 + 样例数据
-├── llm.py            # OpenAI-compatible chat，支持 n 条候选
-├── prompt.py         # schema 文本、生成/修复 prompt
-├── safety.py         # 只读、单语句、PII 的简单检查
-├── executor.py       # SQLite 只读执行、超时、行数限制
-├── selector.py       # 结果哈希、候选投票、静态打分
-├── agent.py          # 自适应多候选主循环
-└── cli.py            # 命令行演示
+├── build_db.py                 # schema.json -> SQLite 镜像 + 合成数据
+├── llm.py                      # OpenAI-compatible 封装（n 候选）
+├── prompt.py                   # schema 文本、评估/生成/修复 prompt
+├── safety.py                   # 只读、单语句、PII 静态检查（sqlglot）
+├── executor.py                 # SQLite 只读执行、超时、行数限制
+├── selector.py                 # 结果哈希、投票、静态打分
+├── core.py                     # 核心编排：评估/生成/执行/修正/投票（纯函数）
+└── cli.py                      # 命令行演示
+
+app/graph/subgraphs/
+├── clarification.py            # B 的澄清子图（已有）
+└── sql_generation.py           # C 写：SQL 生成子图（包装 core.py）
 
 data/
-├── schema.json                   # A 提供
-├── sql_examples_sqlite.json      # A 提供
-└── synthetic/
-    └── medical.db                # C 生成，用于执行验证
+├── schema.json                 # A 提供
+├── sql_examples_sqlite.json    # A 提供（15 条）
+├── gold_sql_sqlite.json        # A 待交付
+└── synthetic/medical.db        # C 生成（build_db.py）
 
 docs/
-├── PLAN_MEMBER_C.md              # 本文件
-└── SQLITE_AGENT.md               # 使用/配置/限制说明
+├── PLAN_MEMBER_C.md            # 本文件
+└── SQLITE_AGENT.md             # 使用/配置/限制说明
 ```
 
-## 3. 主流程（自适应多候选）
+依赖方向：`app/graph → app/tools`（子图包装 core），`app/tools` 不反向依赖。
+
+旧的 `app/tools/sql_generator/`（`base.py` + `reforce_adapter.py`）**保留不动、不再被引用**，仅作历史记录；新代码一律走 `app/tools/sql_agent/`，避免有人接错入口。
+
+## 3. 子图主流程
 
 ```text
-B 的完整问题
+输入：question（澄清后）+ schema_links（模式链接）
   ↓
-读取 A 的 schema + SQLite 示例
+[1] evaluate 问题评估节点
+    规则/LLM 判定难度 → 初始候选数 N（1 或 2）
   ↓
-估计问题复杂度 → 决定候选数 N（1/2/3）
+[2] generate SQL 生成节点
+    LLM 生成 N 条候选；提取 SQL、归一化去重、静态安全检查
   ↓
-LLM 生成 N 条候选 SQL
+[3] execute 执行节点
+    N 条候选在 SQLite 镜像执行；
+    语法/执行失败的候选：错误回传 → 回到 [2] 重新生成（共享修复预算）
+    输出：N 条候选 + 各自执行结果（结果只留在子图内）
   ↓
-去重 → 简单安全检查 → 在 SQLite 镜像执行
+[4] select 校验/投票节点
+    - 只有 1 条有效候选 → 直接返回（verified=true）
+    - 2 条候选结果一致 → 任选一条返回
+    - 2 条候选结果不一致 → 回 [2] 升级生成第 3 条；
+      新结果与原 2 条哪条一致 → 返回那条
+    - 第 3 条与前 2 条都不一致 → 静态分选优，verified=false，说明原因
+    - 候选全部非法/失败 → 返回 error
   ↓
-执行失败的候选：把错误喂回 LLM，修正 1 次（共享预算）
-  ↓
-按结果集哈希投票：
-  ├─ 两个候选结果一致 → 直接采用，提前结束
-  ├─ 两个候选结果不一致 → 追加生成第 3 条（escalation）
-  └─ 全部失败/为空 → 静态分兜底，或返回错误
-  ↓
-返回最终 SQL + 候选 + 投票 + 成本统计
+输出：sql + verified + candidates + 统计（llm_calls/executions/repairs/elapsed_ms）
 ```
 
-## 4. 成本控制与创意（重点）
+### 3.1 子图状态：必须与父图兼容（关键约束）
 
-这是 ReFoRCE 的简化版，但保留“多候选 + 执行反馈 + 投票”，同时控制成本：
+**LangGraph 实测结论**：编译后的子图如果与父图 **state schema 不一致**，直接 `add_node` 会让子图输出中父图没有的 key **被静默丢弃**——不报错、不告警。实测中返回结果只剩 `{'question': 'q'}`，`final_sql` 直接消失。现有澄清子图能正常工作是**因为它和父图共用同一个 `GraphState`**。
 
-1. **自适应候选数**
-   - 简单问题（短、无多指标/分组/排名）：1 条。
-   - 普通问题：2 条。
-   - 复杂问题（“排名/占比/各/每/平均/同比/环比”等）：最多 3 条，但**先出 2 条**，结果不一致才追加第 3 条。
-   - 用关键词启发式，不额外调 LLM。
+因此**不允许**把 `SQLGenerationState` 直接当作子图 state 接进主图。两种可行做法：
 
-2. **共识提前停止**
-   - 前两条候选执行结果一致（结果哈希相同）→ 直接采用，不再生成/执行第 3 条。
-   - 大部分问题只花 2 次生成 + 2 次执行。
+| 方案 | 做法 | 评价 |
+|---|---|---|
+| **A（推荐）** | 子图直接使用父图 `GraphState`，节点只读写 `sql / sql_source / sql_assumptions / status / error / trace`；候选、投票、修复计数等中间量作为 `core.py` 内部的局部数据传递，不放进 state | 与澄清子图同构，零映射代码，最稳 |
+| B | 保留 `SQLGenerationState` 作为子图私有 state，在 `builder.py` 写 wrapper 节点：从 `GraphState` 取入参，出参显式映射回父图字段 | 多一层胶水，但子图可独立测试 |
 
-3. **不一致才升级（escalation）**
-   - 前两条结果不一致 → 才生成第 3 条。
-   - 避免“所有问题都跑满 3 条”的浪费。
+无论选 A 还是 B，**父图侧必须收到这 6 个字段**：`sql`、`sql_source`、`status`、`error`、`sql_assumptions`、`trace`。缺任何一个，API/前端都会表现为「SQL 消失」或「状态不对」，而且不抛异常。
 
-4. **只修失败候选**
-   - 执行成功的候选不修。
-   - 只有报错的候选进入修复；每条最多修 1 次，总修复预算 2 次。
-   - 空结果不默认视为错误，避免把合理空结果改坏。
-
-5. **去重再执行**
-   - 两条候选 SQL 归一化后相同 → 只执行一次。
-
-6. **静态预过滤**
-   - 非 SELECT、写操作、多语句、PII 直接拒绝，不浪费执行。
-
-7. **结果哈希采样**
-   - 只取前 50 行 + 是否截断 + 行数做哈希，不把全量结果放内存。
-
-8. **不用 LLM judge**
-   - 选择完全用结果哈希 + 静态分，避免额外 LLM 调用。
-
-9. **可选模型分层**
-   - 生成用便宜/快模型，修复用更强模型；默认同一个模型，可通过配置切换。
-
-10. **缓存 schema/示例**
-    - schema 文本和 few-shot 在进程内缓存，不重复读文件。
-
-返回结果里带 `llm_calls / executions / repairs / elapsed_ms`，方便看成本。
-
-## 5. 示例代码
-
-以下代码可直接作为实现起点。
-
-### 5.1 `build_db.py`：建 SQLite 镜像
+下面的 `SQLGenerationState` 作为 `core.py` 的内部数据结构保留（方案 A 下不进入 LangGraph state；方案 B 下作为子图私有 state），字段本身不变：
 
 ```python
-import json
-import random
-import sqlite3
-from pathlib import Path
-
-
-def sqlite_type(t: str) -> str:
-    t = t.upper()
-    if "INT" in t:
-        return "INTEGER"
-    if any(x in t for x in ("NUM", "DEC", "NUMBER", "FLOAT", "DOUBLE", "REAL")):
-        return "REAL"
-    return "TEXT"
-
-
-def fake_value(col: dict, i: int, rng: random.Random):
-    """按列名/类型/枚举造简单假值；_id 用固定范围，保证 join 能对上。"""
-    if col.get("enum_values"):
-        return rng.choice(col["enum_values"])["value"]
-    name = col["name"].lower()
-    typ = col["type"].upper()
-    if name.endswith("_id"):
-        return str(i % 20 + 1)
-    if "DATE" in typ or "TIME" in typ:
-        return f"2025-{rng.randint(1, 12):02d}-{rng.randint(1, 28):02d}"
-    if "INT" in typ:
-        return rng.randint(1, 100)
-    if any(x in typ for x in ("NUM", "DEC", "NUMBER", "FLOAT", "DOUBLE", "REAL")):
-        return round(rng.uniform(0, 10000), 2)
-    if col.get("is_pii"):
-        return f"P{i:04d}"
-    return f"{col['name']}_{i}"
-
-
-def build(
-    schema_path: str = "data/schema.json",
-    db_path: str = "data/synthetic/medical.db",
-    rows: int = 20,
-    seed: int = 42,
-) -> None:
-    schema = json.loads(Path(schema_path).read_text(encoding="utf-8"))
-    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    rng = random.Random(seed)
-
-    for table in schema["tables"]:
-        name = table["name"]
-        cols = table["columns"]
-        defs = ", ".join(f'"{c["name"]}" {sqlite_type(c["type"])}' for c in cols)
-        conn.execute(f'DROP TABLE IF EXISTS "{name}"')
-        conn.execute(f'CREATE TABLE "{name}" ({defs})')
-        placeholders = ", ".join("?" for _ in cols)
-        for i in range(rows):
-            values = [fake_value(c, i, rng) for c in cols]
-            conn.execute(f'INSERT INTO "{name}" VALUES ({placeholders})', values)
-
-    conn.commit()
-    conn.close()
-    print(f"SQLite DB created: {db_path}")
-
-
-if __name__ == "__main__":
-    build()
+class SQLGenerationState(TypedDict, total=False):
+    question: str                      # 澄清后的完整问题
+    schema_links: list[dict]           # 模式链接：[{table, columns, relationship, ...}]
+    n_initial: int                     # 评估结果：1 或 2
+    candidates: list[dict]             # [{sql, safe, exec_ok, rows, truncated, error, has_pii, repaired}]
+    repair_budget: int                 # 剩余修复次数（共享，默认 2）
+    escalated: bool                    # 是否已升级生成第 3 条
+    final_sql: str | None
+    verified: bool
+    result_empty: bool
+    reason: str                        # 选择理由（人类可读）
+    stats: dict                        # llm_calls/executions/repairs
+    error: str | None
+    trace: list[dict]
 ```
 
-### 5.2 `prompt.py`：schema、规则、生成/修复 prompt
-
-```python
-import json
-from functools import lru_cache
-from pathlib import Path
-
-SQLITE_RULES = """你是医疗数据 SQLite SQL 生成器。
-只输出一条只读 SELECT / WITH ... SELECT。
-规则：
-1. 只使用给定的表和列，不要编造。
-2. 方言是 SQLite：IFNULL/COALESCE、strftime、||、LIMIT、双引号。
-3. 禁止 NVL、TO_CHAR、ROWNUM、DATE_FORMAT、反引号。
-4. 日期以 TEXT 'YYYY-MM-DD' 存储，过滤用 >= / <。
-5. 多表必须写 JOIN 条件，避免笛卡尔积。
-6. 不输出 id_card、姓名等 PII 列；COUNT(DISTINCT ...) 去重除外。
-7. 只输出 SQL，不要解释。
-"""
-
-
-@lru_cache(maxsize=1)
-def load_schema_text(path: str = "data/schema.json") -> str:
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
-    lines: list[str] = []
-    for table in data["tables"]:
-        lines.append(f"## {table['name']} {table.get('description', '')}")
-        for col in table["columns"]:
-            extra = ""
-            if col.get("enum_values"):
-                values = ", ".join(
-                    f"{e['value']}={e['label']}" for e in col["enum_values"]
-                )
-                extra += f" 枚举: {values}"
-            if col.get("is_pii"):
-                extra += " [PII 禁止输出]"
-            lines.append(
-                f"- {col['name']} {col['type']} "
-                f"{col.get('description', '')}{extra}"
-            )
-        for rel in table.get("relationships", []):
-            lines.append(f"- 关系: {rel['on']}")
-        lines.append("")
-    return "\n".join(lines)
-
-
-@lru_cache(maxsize=1)
-def load_examples_text(path: str = "data/sql_examples_sqlite.json") -> str:
-    p = Path(path)
-    if not p.exists():
-        return ""
-    data = json.loads(p.read_text(encoding="utf-8"))
-    return "\n\n".join(
-        f"问题：{e['question']}\nSQL：{e['sql']}" for e in data.get("examples", [])
-    )
-
-
-def build_messages(
-    question: str,
-    last_sql: str | None = None,
-    last_error: str | None = None,
-) -> list[dict]:
-    user = f"问题：{question}\n\nSchema：\n{load_schema_text()}"
-    examples = load_examples_text()
-    if examples:
-        user += f"\n\n示例：\n{examples}"
-    if last_sql and last_error:
-        user += (
-            f"\n\n上一条 SQL 执行失败：\n{last_sql}\n"
-            f"错误：\n{last_error}\n请修正，只输出 SQL。"
-        )
-    return [
-        {"role": "system", "content": SQLITE_RULES},
-        {"role": "user", "content": user},
-    ]
-```
-
-### 5.3 `llm.py`：支持 n 条候选
-
-```python
-from openai import OpenAI
-
-from app.config import settings
-
-_client: OpenAI | None = None
-
-
-def _get_client() -> OpenAI:
-    global _client
-    if _client is None:
-        _client = OpenAI(
-            api_key=settings.llm_api_key,
-            base_url=settings.llm_base_url or None,
-        )
-    return _client
-
-
-def chat(
-    messages: list[dict],
-    temperature: float = 0.2,
-    n: int = 1,
-) -> list[str]:
-    """返回 n 条文本；provider 不支持 n 时循环调用。"""
-    if n <= 1:
-        resp = _get_client().chat.completions.create(
-            model=settings.llm_model,
-            messages=messages,
-            temperature=temperature,
-        )
-        return [resp.choices[0].message.content or ""]
-
-    try:
-        resp = _get_client().chat.completions.create(
-            model=settings.llm_model,
-            messages=messages,
-            temperature=temperature,
-            n=n,
-        )
-        return [c.message.content or "" for c in resp.choices]
-    except Exception:
-        return [
-            chat(messages, temperature=temperature, n=1)[0] for _ in range(n)
-        ]
-```
-
-### 5.4 `safety.py`：只读、单语句、PII 简单检查
-
-```python
-import re
-
-WRITE_RE = re.compile(
-    r"\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b",
-    re.IGNORECASE,
-)
-PII_RE = re.compile(r"\b(id_card|patient_name|name)\b", re.IGNORECASE)
-
-
-def check_sql(sql: str, pii_columns: list[str] | None = None) -> tuple[bool, str, bool]:
-    """返回 (safe, reason, has_pii)。"""
-    s = sql.strip()
-    if not re.match(r"(?is)^(select|with)\b", s):
-        return False, "只允许 SELECT / WITH", False
-    if ";" in s:
-        return False, "不允许多条语句", False
-    if WRITE_RE.search(s):
-        return False, "检测到写操作", False
-
-    pii_hit = False
-    cols = pii_columns or ["id_card", "patient_name", "name"]
-    for col in cols:
-        if re.search(rf"(?i)\b{re.escape(col)}\b", s):
-            # COUNT(DISTINCT id_card ...) 允许作为去重键
-            if not re.search(
-                rf"(?is)count\s*\(\s*distinct[^)]*\b{re.escape(col)}\b", s
-            ):
-                pii_hit = True
-    return True, "", pii_hit
-```
-
-> MVP 用正则，能挡住明显问题；后续可换 `sqlglot`。
-
-### 5.5 `executor.py`：SQLite 只读执行
-
-```python
-import sqlite3
-import time
-
-
-def execute_sql(
-    sql: str,
-    db_path: str,
-    timeout: int = 5,
-    max_rows: int = 50,
-) -> dict:
-    """返回 {ok, columns, rows, truncated, error, elapsed_ms}。"""
-    start = time.monotonic()
-    conn = None
-    try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        conn.execute("PRAGMA query_only = ON")
-        deadline = start + timeout
-        conn.set_progress_handler(
-            lambda: 1 if time.monotonic() > deadline else 0,
-            10000,
-        )
-        cursor = conn.execute(sql)
-        columns = [d[0] for d in cursor.description or []]
-        rows = cursor.fetchmany(max_rows + 1)
-        truncated = len(rows) > max_rows
-        rows = rows[:max_rows]
-        return {
-            "ok": True,
-            "columns": columns,
-            "rows": rows,
-            "truncated": truncated,
-            "error": None,
-            "elapsed_ms": int((time.monotonic() - start) * 1000),
-        }
-    except Exception as exc:
-        return {
-            "ok": False,
-            "columns": [],
-            "rows": [],
-            "truncated": False,
-            "error": str(exc),
-            "elapsed_ms": int((time.monotonic() - start) * 1000),
-        }
-    finally:
-        if conn is not None:
-            conn.close()
-```
-
-### 5.6 `selector.py`：结果哈希 + 投票
-
-```python
-import hashlib
-import json
-
-
-def result_hash(rows: list[tuple], truncated: bool = False) -> str:
-    """只对前 50 行 + 是否截断 + 行数做哈希；忽略列别名和行顺序。"""
-    normalized = sorted(
-        tuple("" if v is None else str(v) for v in row) for row in rows
-    )
-    payload = json.dumps(
-        {"n": len(normalized), "truncated": truncated, "rows": normalized},
-        ensure_ascii=False,
-        sort_keys=True,
-    )
-    return hashlib.md5(payload.encode("utf-8")).hexdigest()
-
-
-def static_score(c: dict) -> int:
-    score = 0
-    if c.get("safe"):
-        score += 100
-    if c.get("exec_ok"):
-        score += 20
-    if c.get("rows"):
-        score += 10
-    if not c.get("has_pii"):
-        score += 10
-    score -= c.get("join_count", 0) * 2
-    score -= len(c.get("sql", "")) // 200
-    return score
-
-
-def vote(candidates: list[dict]) -> tuple[dict | None, int, str]:
-    """
-    候选字段：sql, safe, exec_ok, rows, truncated, has_pii, join_count。
-    返回 (best, votes, reason)。
-    """
-    executed = [c for c in candidates if c.get("safe") and c.get("exec_ok")]
-    if not executed:
-        valid = [c for c in candidates if c.get("safe")]
-        if not valid:
-            return None, 0, "all_invalid"
-        best = max(valid, key=static_score)
-        return best, 0, "no_execution_verified"
-
-    groups: dict[str, list[dict]] = {}
-    for c in executed:
-        if not c.get("rows"):
-            h = "empty"
-        else:
-            h = result_hash(c["rows"], c.get("truncated", False))
-        groups.setdefault(h, []).append(c)
-
-    non_empty = {h: g for h, g in groups.items() if h != "empty"}
-    pool = non_empty or groups
-    best_hash = max(
-        pool,
-        key=lambda h: (len(pool[h]), max(static_score(c) for c in pool[h])),
-    )
-    group = pool[best_hash]
-    best = max(group, key=static_score)
-    reason = f"{len(group)}/{len(executed)} candidates produced the same result"
-    if best_hash == "empty":
-        reason = "all candidates returned empty; selected by static score"
-    return best, len(group), reason
-```
-
-### 5.7 `agent.py`：自适应多候选 + 修正
-
-```python
-import re
-import time
-from pathlib import Path
-
-from app.config import settings
-from app.tools.sql_agent.executor import execute_sql
-from app.tools.sql_agent.llm import chat
-from app.tools.sql_agent.prompt import build_messages
-from app.tools.sql_agent.safety import check_sql
-from app.tools.sql_agent.selector import vote
-
-COMPLEX_WORDS = ["排名", "占比", "比例", "同比", "环比", "平均", "各", "每", "趋势", "top"]
-JOIN_WORDS = ["和", "与", "对比", "分别"]
-PII_COLS = ["id_card", "patient_name", "name"]
-
-
-def extract_sql(text: str) -> str:
-    match = re.search(r"\x60{3}(?:sql)?\s*(.*?)\x60{3}", text, re.S | re.IGNORECASE)
-    sql = match.group(1) if match else text
-    return sql.strip().rstrip(";")
-
-
-def estimate_complexity(question: str) -> str:
-    if any(w in question for w in COMPLEX_WORDS):
-        return "complex"
-    if any(w in question for w in JOIN_WORDS):
-        return "normal"
-    if len(question) <= 12:
-        return "simple"
-    return "normal"
-
-
-def normalize_sql(sql: str) -> str:
-    return re.sub(r"\s+", " ", sql).strip().lower().rstrip(";")
-
-
-def _evaluate(sql: str, db_path: str, stats: dict) -> dict:
-    safe, reason, has_pii = check_sql(sql, PII_COLS)
-    item = {
-        "sql": sql,
-        "safe": safe,
-        "reason": reason,
-        "has_pii": has_pii,
-        "exec_ok": False,
-        "rows": [],
-        "truncated": False,
-        "join_count": len(re.findall(r"(?i)\bjoin\b", sql)),
-    }
-    if not safe:
-        return item
-
-    stats["executions"] += 1
-    result = execute_sql(sql, db_path)
-    item["exec_ok"] = result["ok"]
-    item["rows"] = result["rows"]
-    item["truncated"] = result["truncated"]
-    item["error"] = result["error"]
-    return item
-
-
-def generate_sql(
-    question: str,
-    db_path: str | None = None,
-    max_candidates: int | None = None,
-    max_repairs: int | None = None,
-) -> dict:
-    start = time.monotonic()
-    db_path = db_path or settings.sqlite_db_path
-    max_repairs = max_repairs if max_repairs is not None else settings.max_repair_rounds
-    stats = {"llm_calls": 0, "executions": 0, "repairs": 0}
-
-    if not Path(db_path).exists():
-        return {
-            "sql": None,
-            "verified": False,
-            "candidates": [],
-            "selected_reason": "mirror_missing",
-            "votes": 0,
-            "llm_calls": 0,
-            "executions": 0,
-            "repairs": 0,
-            "elapsed_ms": 0,
-            "error": "mirror_missing",
-        }
-
-    complexity = estimate_complexity(question)
-    max_n = max_candidates or {"simple": 1, "normal": 2, "complex": 3}[complexity]
-    initial_n = 1 if max_n <= 1 else 2
-
-    # 1. 先生成 1 或 2 条；复杂问题不一致时才追加第 3 条
-    messages = build_messages(question)
-    stats["llm_calls"] += 1
-    raw_list = chat(messages, temperature=0.7, n=initial_n)
-
-    candidates: list[dict] = []
-    seen: set[str] = set()
-    for raw in raw_list:
-        sql = extract_sql(raw)
-        key = normalize_sql(sql)
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        candidates.append(_evaluate(sql, db_path, stats))
-
-    # 2. 失败候选修正（共享预算）
-    repaired_budget = max_repairs
-    for item in list(candidates):
-        if item["exec_ok"] or repaired_budget <= 0:
-            continue
-        stats["repairs"] += 1
-        repaired_budget -= 1
-        stats["llm_calls"] += 1
-        messages = build_messages(
-            question,
-            last_sql=item["sql"],
-            last_error=item.get("error") or item.get("reason") or "unknown",
-        )
-        raw = chat(messages, temperature=0.0, n=1)[0]
-        fixed_sql = extract_sql(raw)
-        fixed = _evaluate(fixed_sql, db_path, stats)
-        fixed["repaired_from"] = item["sql"]
-        candidates.append(fixed)
-
-    # 3. 两候选不一致 → 升级第 3 条
-    executed = [c for c in candidates if c["exec_ok"] and c["safe"]]
-    if len(executed) >= 2:
-        from app.tools.sql_agent.selector import result_hash
-
-        hashes = {
-            result_hash(c["rows"], c.get("truncated", False))
-            if c["rows"] else "empty"
-            for c in executed
-        }
-        need_extra = max_n >= 3 and (len(hashes) > 1 or len(executed) == 1)
-        if need_extra and len(candidates) < 3:
-            stats["llm_calls"] += 1
-            extra = chat(build_messages(question), temperature=0.7, n=1)[0]
-            sql = extract_sql(extra)
-            if normalize_sql(sql) not in seen:
-                candidates.append(_evaluate(sql, db_path, stats))
-
-    # 4. 投票
-    best, votes, reason = vote(candidates)
-    if best is None:
-        return {
-            "sql": None,
-            "verified": False,
-            "candidates": [c["sql"] for c in candidates],
-            "selected_reason": reason,
-            "votes": 0,
-            "llm_calls": stats["llm_calls"],
-            "executions": stats["executions"],
-            "repairs": stats["repairs"],
-            "elapsed_ms": int((time.monotonic() - start) * 1000),
-            "error": "all_candidates_invalid",
-        }
-
-    return {
-        "sql": best["sql"],
-        "verified": best["exec_ok"],
-        "result_empty": not best["rows"],
-        "candidates": [c["sql"] for c in candidates],
-        "selected_reason": reason,
-        "votes": votes,
-        "llm_calls": stats["llm_calls"],
-        "executions": stats["executions"],
-        "repairs": stats["repairs"],
-        "elapsed_ms": int((time.monotonic() - start) * 1000),
-        "error": None,
-    }
-```
-
-### 5.8 `cli.py`：命令行演示
-
-```python
-import json
-import sys
-
-from app.tools.sql_agent.agent import generate_sql
-
-
-if __name__ == "__main__":
-    question = " ".join(sys.argv[1:])
-    result = generate_sql(question)
-    print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
-```
-
-运行：
-
-```bash
-python -m app.tools.sql_agent.build_db
-python -m app.tools.sql_agent.cli "2025年1月门诊人次是多少"
-```
-
-## 6. 配置
-
-在 `app/config.py` 增加：
-
-```python
-sqlite_db_path: str = "data/synthetic/medical.db"
-max_repair_rounds: int = 2
-```
-
-`.env.example` 增加：
+### 3.2 子图节点与路由
 
 ```text
-SQLITE_DB_PATH=data/synthetic/medical.db
-MAX_REPAIR_ROUNDS=2
+START → evaluate → generate → execute → select → END
+                    ↑           │
+                    └───────────┴── 修复/升级回环
+execute --有失败且预算--> generate   # 错误回传修正
+select   --不一致且可升级--> generate # 第 3 条升级
 ```
 
-LLM 复用现有的 `LLM_API_KEY` / `LLM_MODEL` / `LLM_BASE_URL`。  
-DeepSeek 默认：`LLM_MODEL=deepseek-chat`，`LLM_BASE_URL=https://api.deepseek.com`。  
-C 用 `openai` SDK 作为 OpenAI-compatible 客户端；`langchain-deepseek` 只给 B 用。
+路由函数放在子图内（`app/graph/subgraphs/sql_generation.py`），节点实现调用 `app/tools/sql_agent/core.py` 的纯函数。
 
-## 7. 开发顺序（4 天）
+子图**不含 `interrupt`**，不需要 checkpointer，也不产生子图级持久化状态；每次 `generate_sql` 节点被调用时从头执行一次。
+
+## 4. 节点设计
+
+### 4.1 evaluate —— 问题评估（候选数 1 或 2）
+
+- **默认：关键词启发式（0 LLM 调用）**。
+
+  ```python
+  COMPLEX_WORDS = ["排名", "占比", "比例", "同比", "环比", "平均", "各", "每", "趋势", "top"]
+  JOIN_WORDS = ["和", "与", "对比", "分别"]
+
+  def estimate_n(question: str) -> int:
+      if any(w in question for w in COMPLEX_WORDS):
+          return 2
+      if any(w in question for w in JOIN_WORDS) or len(question) > 12:
+          return 2
+      return 1
+  ```
+
+- **可选 LLM 评估**（`SQL_LLM_EVALUATE=true`）：一次结构化调用，返回 `{"complexity": "simple|complex", "n": 1|2}`；解析失败回退启发式。**默认关闭**，避免每个问题多花一次调用。
+
+### 4.2 generate —— 生成 N 条候选
+
+- prompt：问题 + schema 文本 + SQLite 示例（top-k 相关）+ 只读/PII/SQLite 方言规则。
+- **schema 文本来源优先级**（避免与 B 的上下文分叉）：
+  1. 父图传入的 `schema_context.prompt_text`（B 已算好，≤8k，含指标/示例/PII 标注）—— **首选**；
+  2. 父图没传时，才由 `prompt.py` 读 `data/schema.json` 自行拼；
+  3. `schema_links` 只用于提示和选表过滤，**不替代**全量 schema。
+- **LLM 客户端**：默认由 `settings` 新建（`llm.py`，OpenAI-compatible，支持 n 候选）；`build_sql_subgraph(deps, llm=...)` 支持注入，测试传 fake，**测试中禁止联网**。
+- 输出：`n` 条 SQL（一条请求里并列输出，或 `n` 次调用，temperature 0.7）。
+- 提取 SQL 后：归一化去重（相同 SQL 只留一条）、静态安全检查（`safety.py`，sqlglot 解析 + 只读/PII 检查）。
+- 返回候选列表 + 去重/安全过滤信息。
+
+### 4.3 execute —— 执行 + 修正
+
+- 每个候选在 `data/synthetic/medical.db` 上只读执行（`file:...?mode=ro` + `PRAGMA query_only`）。
+- 超时 5s（`set_progress_handler`），最多取 50 行，记录 `truncated`。
+- 失败候选：把 **错误信息 + 原 SQL + schema 摘要** 回传 `generate` 重新生成（temperature 0）。
+  - 单候选最多修 1 次；总修复预算 `MAX_REPAIR_ROUNDS=2`（共享）。
+  - 空结果**不当作错误**（可能确实无数据），继续参与投票。
+- 只回传错误给 LLM，**不把查询结果行回传**（防 PII 泄露）。
+
+### 4.4 select —— 投票/校验/升级
+
+按优先级：
+
+1. 无有效候选（全部非法/执行失败且修复耗尽）→ `error`。
+2. 有效候选只有 1 条 → 返回它（`verified=true`）。
+3. 有效候选 ≥ 2 条：
+   - 结果哈希两两一致 → 任选一条（`verified=true`，`votes=2`）。
+   - 不一致 → **升级**：生成第 3 条（只允许一次，`escalated` 标记）。
+     - 第 3 条与其中一条一致 → 返回该条（`votes=2`）。
+     - 第 3 条与前 2 条都不一致 → **静态分选优**（安全 + 执行通过 + 无 PII + 少 join + SQL 短），`verified=false`，`reason` 说明无共识。
+4. 空结果规则：空+空算一致（`result_empty=true`）；空 vs 非空算不一致（触发升级）。
+
+结果哈希：排序后取行值字符串 + 行数 + 是否截断（忽略列别名差异，避免"cnt" vs "count"误判不一致）。
+
+## 5. 成本控制（沿用并加强）
+
+1. 启发式评估，默认不调 LLM。
+2. 共识提前停止：前两条一致直接返回，不生成第 3 条。
+3. 不一致才升级，且**只升一次**（上限 3 条）。
+4. 只修失败候选；空结果不修。
+5. 去重后再执行。
+6. 静态预过滤（非 SELECT/多语句/PII 直接拒绝，不浪费执行）。
+7. 结果哈希只采样前 50 行 + 行数 + 截断标记。
+8. 不用 LLM judge。
+9. 返回 `llm_calls / executions / repairs / elapsed_ms`。
+
+## 6. 与 B 的接口（含模式链接）
+
+### 6.1 子图 ↔ 父图字段映射（必须实现）
+
+| 父图 `GraphState` 字段 | 子图产出 | 说明 |
+|---|---|---|
+| `sql` | `final_sql` | 无有效候选时为 `None` |
+| `sql_source` | 固定 `"sqlite"` | 接口/前端用于区分来源 |
+| `sql_assumptions` | 由 `verified` / `result_empty` / `reason` 生成的中文说明 | 例如「2 条候选结果一致」「无共识，已按静态分选优」 |
+| `sql_confidence` | `verified ? 0.9 : 0.5` | 可选字段，无则写 `None` |
+| `status` | `"ok"` / `"error"` | **必须返回**，`routes_queries._status()` 依赖它 |
+| `error` | `{"code": ..., "message": ...}` | `code` 用 `sql_generation_failed` / `sql_no_valid_candidate` |
+| `trace` | 追加 `{node: "generate_sql", ok, candidates, executions, repairs, elapsed_ms}` | **只放行数/哈希/耗时，不放结果行** |
+
+`candidates`、`verified`、`reason`、`stats` 等中间量如需暴露，**写进 `trace`**，不新增顶层字段，避免 `QueryResponse` 一路改到前端。
+
+### 6.2 B 的 `finalize_question` 输出 `schema_links`
+
+```python
+schema_links = [
+    {"table": "visit", "columns": ["visit_id", "activity_type_code"], "relationship": "visit→patient"},
+    {"table": "medical_expense_rec", "columns": ["visit_id"], "relationship": "visit→medical_expense_rec"},
+]
+```
+
+来源：`finalize` 节点已经算出的 `schema_context`（其 `to_dict()` 已含 `tables / columns / join_paths`），拼装即可，**不需要重新调知识层**。
+
+### 6.3 C 的子图输入
+
+`question + schema_links + schema_context.prompt_text`（可选）。
+
+**schema 文本优先用 `prompt_text`**（见 §4.2），子图内部读 `data/schema.json` 只作为兜底；`schema_links` 用于提示与过滤，不替代全量 schema。
+
+### 6.4 B 侧改造点（共 5 处）
+
+| 文件 | 改动 |
+|---|---|
+| `app/graph/subgraphs/sql_generation.py` | 新建：子图本体 + `build_sql_subgraph(deps, llm=None)` |
+| `app/graph/builder.py` | `generate_sql` 节点换成子图（方案 A 直接 `add_node`；方案 B 加 wrapper 节点做映射） |
+| `app/graph/state.py` | 加 `schema_links: list[dict]` |
+| `app/graph/nodes/finalize.py` | 输出 `schema_links` |
+| `app/api/schemas.py` + `app/api/routes_queries.py` | `QueryResponse` 加 `schema_links`，`_to_response()` 映射 |
+
+前端 `frontend/models.py::QueryResponse` 本轮**不加**字段：`schema_links` 先只出现在接口响应与 `trace` 里。注意 `result.py` 的 trace 是折叠的原始 JSON，**验收请用 `curl POST /queries` 确认字段**，不要指望页面显示。
+
+### 6.5 约束
+
+- 子图不含 `interrupt`，不需要 checkpointer；
+- 子图入口必须取 `rewritten_question or original_question`，不能直接用 `original_question`；
+- `app/tools/sql_agent/` 不 import `app/graph` / `langgraph`（边界测试保留）。
+
+## 7. 配置
+
+`sqlite_db_path` 与 `max_repair_rounds` **已存在**于 `app/config.py` 和 `.env.example`，不需要新增。只需补 4 项：
+
+```python
+sql_llm_evaluate: bool = False   # 是否用 LLM 评估候选数（默认启发式）
+sql_exec_timeout: int = 5
+sql_max_rows: int = 50
+sql_max_candidates: int = 3      # 上限：1/2/3
+```
+
+`.env.example` 对应增加：
+
+```text
+SQL_LLM_EVALUATE=false
+SQL_EXEC_TIMEOUT=5
+SQL_MAX_ROWS=50
+SQL_MAX_CANDIDATES=3
+```
+
+LLM 复用 `LLM_API_KEY / LLM_MODEL / LLM_BASE_URL`（DeepSeek，OpenAI-compatible）。
+
+## 8. 开发顺序（4 天）
 
 | 天 | 任务 | 交付 |
 |---|---|---|
-| D1 | `build_db.py` + `prompt.py` 的 schema/示例加载；生成 `medical.db` | 能建库、能打印 schema 文本 |
-| D2 | `llm.py` + 单候选生成 + `safety.py` + `executor.py` | 一条 SQL 能执行成功 |
-| D3 | `selector.py` + `agent.py` 的多候选、投票、修正、升级 | 多候选闭环 |
-| D4 | `cli.py` + 与 B 联调 + `docs/SQLITE_AGENT.md` | 可演示、可交接 |
+| D1 | `build_db.py`（schema 建库 + 合成数据）+ `prompt.py` + `safety.py`；生成 `data/synthetic/medical.db` | 能建库、能打印 schema 文本、一条 SQL 能执行 |
+| D2 | `llm.py` + `core.py` 的 generate/execute + 单候选链路 | `cli` 对 3 个问题返回 verified SQL |
+| D3 | `selector.py` + `core.py` 投票/升级/兜底 + `app/graph/subgraphs/sql_generation.py` | 子图闭环，B 接入 `builder.py` |
+| D4 | B 侧 `schema_links` + API 字段 + 联调 + `docs/SQLITE_AGENT.md` | 可演示、可交接 |
 
-## 8. 验收标准
+每日本门槛（不做完不进下一天）：
 
-- [ ] `python -m app.tools.sql_agent.build_db` 能从 `data/schema.json` 建出 `data/synthetic/medical.db`，所有表都有 20 行样例数据。
-- [ ] `python -m app.tools.sql_agent.cli "2025年1月门诊人次是多少"` 返回非空 SQL，`verified=true`，`result` 非空。
-- [ ] 普通/复杂问题通常返回 2 条候选；如果两条生成完全一致会被去重，允许只剩 1 条。简单问题允许 1 条。
-- [ ] 前两条候选结果一致时，`llm_calls`/`executions` 不继续增长（共识提前停止）。
-- [ ] 复杂问题前两条候选结果不一致时，会追加第 3 条（escalation），`candidates` 数量增加；普通问题不会无条件跑 3 条。
-- [ ] 执行失败的候选会触发修复；修复预算最多 2 次；仍失败返回 `verified=false` 和错误，不崩溃。
+- **D1**：`build_db.py` 建出 `medical.db`，并把 `data/sql_examples_sqlite.json` 的 **15 条示例全部在 `medical.db` 上重跑通过**。这比「13 张表都有数据」更能暴露合成数据 join 键不匹配的问题。
+- **D2**：`tests/unit/tools/` 用 fake LLM + fake 执行器跑通「单候选成功」和「单候选执行失败 → 修复成功」两条路径，不联网。
+- **D3**：子图测试覆盖投票一致 / 不一致升级第 3 条 / 无共识静态分兜底 / 全部失败四条路径；接入 `builder.py` 后 `pytest tests -q` 全绿。
+- **D4**：`curl POST /queries` 能同时看到 `schema_links` 和非空 `sql`。
+
+### 8.1 测试与 fake（新增，D2 门槛）
+
+现有 `tests/fakes.py::FakeLLMClient` 只实现单条 `generate_sql`，**不支持 n 候选与修复重试**，C 不能直接复用。需要新增：
+
+- `tests/fakes.py` 追加 `FakeSQLAgentLLM`：按队列返回 `list[str]`，可配置抛错；
+- `FakeExecutor`：按 SQL 映射预设 `(columns, rows)` 或 `error`，覆盖空结果、截断、超时；
+- `tests/unit/tools/test_selector.py`：一致 / 不一致 / 空+空 / 空 vs 非空 / 无共识静态分；
+- `tests/unit/tools/test_core.py`：修复预算耗尽、升级只一次、候选去重、非法 SQL 预过滤；
+- `tests/unit/tools/test_subgraph.py`：子图作为节点接入父图后 `sql / status / error` 不丢（**专门回归本次实测发现的 schema 丢 key 问题**）；
+- 全部不联网、不读 `.env`。
+
+## 9. 验收标准
+
+- [ ] `python -m app.tools.sql_agent.build_db` 建出 `data/synthetic/medical.db`，13 张表都有数据，且 `data/sql_examples_sqlite.json` 的 15 条示例全部在该库执行通过。
+- [ ] `python -m app.tools.sql_agent.cli "2025年1月门诊人次是多少"` 返回非空 SQL，`verified=true`。
+- [ ] 简单问题初始候选 1 条，直接返回（不生成第 2 条）。
+- [ ] 复杂问题初始候选 2 条；两条一致时 `llm_calls/executions` 不继续增长。
+- [ ] 两条不一致时升级第 3 条；第 3 条与某条一致则返回该条；都不一致则静态分兜底且 `verified=false`。
+- [ ] 执行失败的候选触发修正；总修复 ≤ 2；仍失败返回结构化错误，不崩溃。
+- [ ] 空结果：空+空算一致（`result_empty=true`）；空 vs 非空算不一致（升级）。
 - [ ] `safety.py` 拒绝 `DELETE/UPDATE/DROP`、多语句、非 SELECT；PII 列被标记。
-- [ ] 执行器只读、5 秒超时、最多取 50 行；不会连接真实生产库。
-- [ ] 返回结果包含 `llm_calls / executions / repairs / elapsed_ms`，能看出成本。
-- [ ] B 能直接调用：
+- [ ] 执行器只读、5s 超时、最多 50 行；不连真实库。
+- [ ] 子图可被 B 直接接入：`build_sql_subgraph(deps)` 作为 `generate_sql` 节点，接入后父图能收到 `sql / sql_source / sql_assumptions / status / error / trace`，不掉字段（`tests/unit/tools/test_subgraph.py` 回归）。
+- [ ] 澄清后的响应含 `schema_links`（表/列/关系），用 `curl POST /queries` 验证（前端本轮不展示）。
+- [ ] `app/tools` 不 import `langgraph` / `app/graph`（边界测试通过）。
+- [ ] 查询结果行不进 API 响应（trace 只有行数/哈希/耗时）。
+- [ ] `docs/SQLITE_AGENT.md` 写清建库、配置、子图、投票/兜底、SQLite 方言限制。
 
-```python
-from app.tools.sql_agent.agent import generate_sql
-result = generate_sql("2025年1月门诊人次是多少")
-print(result["sql"], result["verified"])
-```
-
-- [ ] 不 import `langchain` / `langgraph` / `app.graph` / `app.api`。
-- [ ] `docs/SQLITE_AGENT.md` 写清建库、配置、CLI、SQLite 方言限制。
-
-## 9. 与 B 的接口
-
-```python
-def generate_sql(
-    question: str,
-    db_path: str | None = None,
-    max_candidates: int | None = None,
-    max_repairs: int = 2,
-) -> dict:
-    ...
-```
-
-B 只需要传问题；schema 由 C 读取 A 的 `data/schema.json`。返回：
-
-```json
-{
-  "sql": "SELECT ...",
-  "verified": true,
-  "result_empty": false,
-  "candidates": ["SELECT ...", "SELECT ..."],
-  "selected_reason": "2/2 candidates produced the same result",
-  "votes": 2,
-  "llm_calls": 1,
-  "executions": 2,
-  "repairs": 0,
-  "elapsed_ms": 1200,
-  "error": null
-}
-```
+> 本轮验收**不依赖** `data/gold_sql_sqlite.json`（尚未交付）：只验「可执行 + 候选一致 + 字段完整」。gold 结果对比等 A 交付后再补，届时单开一节扩展验收。
 
 ## 10. 不做什么
 
-- 不接官方 ReFoRCE；不引入其代码、Spider 2.0 目录、Snowflake/BigQuery/spaCy/GPU。
-- 不使用 LangChain / LangGraph。
-- 不做评测、不做 gold SQL 对比、不做指标统计。
-- 不连接真实 Oracle/PostgreSQL；SQLite 只用于本地执行验证。
-- 不做复杂 schema linking；全量 schema（13 张表）放进 prompt。
-- 不做多轮澄清；问题已经是 B 澄清后的完整问题。
+- 不接官方 ReFoRCE、Spider 2.0、Snowflake/BigQuery/GPU。
+- `app/tools` 不 import langgraph/langchain（子图包装放在 `app/graph/subgraphs/`）。
+- 不做评测、不做 gold SQL 结果对比（A 交付 `gold_sql_sqlite.json` 后再做）。
+- 不连真实 Oracle/PostgreSQL；SQLite 只用于本地执行验证。
+- 不做复杂 schema linking（schema_links 由 B/A 提供，C 只用于过滤提示）。
 - 不做 LLM judge；选择只用结果哈希 + 静态分。
+- 不输出查询结果行（PII/泄露风险）。
 
-## 11. 风险与取舍
+## 11. 风险与对策
 
 | 风险 | 处理 |
 |---|---|
-| 简单正则误判字符串里的 `delete` | MVP 接受；后续可换 `sqlglot` |
-| 结果哈希只采样前 50 行，可能碰撞 | 同时带 `truncated` 和行数；验收时人工抽查 |
-| 复杂度启发式不准 | 宁可多生成一条；`max_candidates` 可手动覆盖 |
-| 合成数据 join 结果可能为空 | `_id` 列用固定范围；空结果不当作错误 |
-| provider 不支持 `n` | `llm.chat` 自动循环调用 |
-| 修复预算被用完 | 返回最后一次 SQL + 错误，不假装成功 |
-| SQLite 与 Oracle 方言不同 | 本轮只做 SQLite；Oracle 后续迁移 |
+| 第 3 条仍无共识 | 静态分兜底 + `verified=false` + 明确 reason，不无限升级 |
+| 空结果被误判 | 空+空算一致但标 `result_empty`；空 vs 非空触发升级 |
+| 修复循环不终止 | 单候选最多修 1 次 + 总预算 2；耗尽即返回错误 |
+| LLM 评估多花调用 | 默认启发式，`SQL_LLM_EVALUATE=true` 才走 LLM |
+| 合成数据 join 为空 | `_id` 列固定范围生成；空结果不当作错误 |
+| 结果哈希碰撞 | 采样前 50 行 + 行数 + 截断标记；验收人工抽查 |
+| SQLite 与 Oracle 方言差异 | 本轮只做 SQLite；返回给用户的 SQL 是 SQLite 方言，接真实库时需方言切换（文档写明） |
+| 查询结果泄露 | 结果只留在子图内；trace 只记行数/哈希/耗时，不回传结果行 |
+| gold SQL 未交付 | 验收先以「能执行 + 候选一致」为准；gold 对比后置 |
+| 子图与父图 schema 不一致，SQL 被静默丢弃 | 方案 A 共用 `GraphState`，或 wrapper 显式映射；`test_subgraph.py` 回归 |
+| 合成数据 join 键不匹配，示例/查询全空 | D1 用 15 条示例在 `medical.db` 上重跑；`_id` 按固定范围生成 |
+| 与 B 的 schema 文本分叉 | 优先用 `schema_context.prompt_text`，读 `schema.json` 仅作兜底 |
+
+## 12. 与旧计划的差异（记录）
+
+| 项 | 旧计划 | 新计划 |
+|---|---|---|
+| 生成方式 | 纯 Python `agent.py` 循环 | LangGraph 子图（`app/graph/subgraphs/sql_generation.py` 包装 `core.py`） |
+| 子图 state | —（无子图） | 与父图共用 `GraphState`（或 wrapper 映射），避免输出被静默丢弃 |
+| 测试 | 无 | `tests/unit/tools/` + `FakeSQLAgentLLM` / `FakeExecutor`，不联网 |
+| schema 文本 | 独立读取 | 优先复用 B 的 `schema_context.prompt_text` |
+| 问题评估 | 关键词启发式 | 启发式默认；可选 LLM 评估 |
+| 澄清输出 | 只有 `rewritten_question` | `rewritten_question` + `schema_links` |
+| 升级规则 | 第 3 条 | 第 3 条 + 无共识静态分兜底 |
+| 空结果 | 空+空算一致 | 同上，但显式标 `result_empty` |
+| 结果外泄 | 未明确 | 结果只留在子图内，不进 API |
+| 候选上限 | 3（复杂先 2） | 同，升级只一次 |

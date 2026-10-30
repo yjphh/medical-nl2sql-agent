@@ -11,11 +11,17 @@ from app.config import settings
 from app.graph.builder import build_graph
 from app.graph.deps import GraphDeps
 from app.knowledge.provider import FileKnowledgeProvider
-from tests.fakes import FakeKnowledgeProvider, FakeLLMClient
+from tests.fakes import (
+    FakeExecutor,
+    FakeKnowledgeProvider,
+    FakeLLMClient,
+    FakeSQLAgentLLM,
+)
 
 # A candidate question that triggers 5 rules; one of them (metric_scope) is
 # resolved by metric selection, leaving 4 blocking items -> capped at 3 rounds.
 FIVE_RULE_QUESTION = "上个月外科住院患者的手术例数"
+DEFAULT_SQL = "SELECT 1"
 
 
 @pytest.fixture(scope="module")
@@ -23,8 +29,14 @@ def knowledge():
     return FileKnowledgeProvider("data")
 
 
-def make_graph(knowledge_provider, llm):
-    deps = GraphDeps(knowledge=knowledge_provider, llm=llm, settings=settings)
+def make_graph(knowledge_provider, llm, sql_llm=None, executor=None):
+    deps = GraphDeps(
+        knowledge=knowledge_provider,
+        llm=llm,
+        settings=settings,
+        sql_llm=sql_llm or FakeSQLAgentLLM([], default_batch=[{"sql": DEFAULT_SQL}]),
+        sql_executor=executor or FakeExecutor(),
+    )
     return build_graph(deps)
 
 
@@ -44,8 +56,12 @@ def answer(result, option_id):
 
 
 def test_no_ambiguity_generates_sql(knowledge):
-    llm = FakeLLMClient(sql="SELECT COUNT(*) AS visits FROM visit")
-    graph = make_graph(knowledge, llm)
+    llm = FakeLLMClient()
+    sql_llm = FakeSQLAgentLLM(
+        [[{"sql": "SELECT COUNT(*) AS visits FROM visit"}]],
+        default_batch=[{"sql": "SELECT COUNT(*) AS visits FROM visit"}],
+    )
+    graph = make_graph(knowledge, llm, sql_llm=sql_llm)
 
     result = graph.invoke(
         {"session_id": "s1", "query_id": "q1", "original_question": "2025年1月急诊人次"},
@@ -55,17 +71,19 @@ def test_no_ambiguity_generates_sql(knowledge):
     assert "__interrupt__" not in result
     assert result["status"] == "ok"
     assert result["sql"] == "SELECT COUNT(*) AS visits FROM visit"
+    assert result["sql_source"] == "sqlite"
     assert result.get("clarification_history", []) == []
     assert result.get("clarification_round", 0) == 0
     assert result["selected_metric_id"] == "emergency_visits"
-    # Only the SQL node should have called the LLM: metric was unambiguous.
-    assert llm.calls.count("generate_sql") == 1
-    assert "choose_metric" not in llm.calls
+    # Only the SQL subgraph generated SQL: the metric was unambiguous.
+    assert len(sql_llm.generate_calls) == 1
+    assert "generate_sql" not in llm.calls
 
 
 def test_two_round_clarification_then_sql(knowledge):
-    llm = FakeLLMClient(sql="SELECT COUNT(*) FROM visit")
-    graph = make_graph(knowledge, llm)
+    llm = FakeLLMClient()
+    sql_llm = FakeSQLAgentLLM([[{"sql": "SELECT COUNT(*) FROM visit"}]])
+    graph = make_graph(knowledge, llm, sql_llm=sql_llm)
     cfg = config()
 
     result = graph.invoke({"original_question": "上个月门诊人次是多少"}, config=cfg)
@@ -77,7 +95,7 @@ def test_two_round_clarification_then_sql(knowledge):
     assert [o["id"] for o in question["options"]] == ["natural_month", "last_30_days"]
     assert question["default_option_id"] == "natural_month"
     # No SQL yet.
-    assert "generate_sql" not in llm.calls
+    assert sql_llm.generate_calls == []
 
     result = graph.invoke(Command(resume=answer(result, "natural_month")), config=cfg)
     question = first_question(result)
@@ -97,13 +115,14 @@ def test_two_round_clarification_then_sql(knowledge):
     assert all(h["source"] == "user" for h in result["clarification_history"])
     # Each code asked once, and every answer reached the SQL prompt.
     assert result["asked_codes"] == ["time_range", "visit_type_scope"]
-    assert "上个月" in llm.sql_requests[0]["question"]
-    assert "自然月" in llm.sql_requests[0]["question"]
-    assert "补充条件" in llm.sql_requests[0]["question"]
+    prompt_question = sql_llm.generate_calls[0]["question"]
+    assert "上个月" in prompt_question
+    assert "自然月" in prompt_question
+    assert "补充条件" in prompt_question
 
 
 def test_skip_uses_default_and_records_assumption(knowledge):
-    llm = FakeLLMClient(sql="SELECT 1")
+    llm = FakeLLMClient()
     graph = make_graph(knowledge, llm)
     cfg = config()
 
@@ -120,8 +139,9 @@ def test_skip_uses_default_and_records_assumption(knowledge):
 
 
 def test_max_rounds_caps_clarification(knowledge):
-    llm = FakeLLMClient(sql="SELECT 2")
-    graph = make_graph(knowledge, llm)
+    llm = FakeLLMClient()
+    sql_llm = FakeSQLAgentLLM([], default_batch=[{"sql": "SELECT 2"}])
+    graph = make_graph(knowledge, llm, sql_llm=sql_llm)
     cfg = config()
 
     result = graph.invoke({"original_question": FIVE_RULE_QUESTION}, config=cfg)
@@ -144,13 +164,13 @@ def test_max_rounds_caps_clarification(knowledge):
     assert len(set(questions)) == 3
     assert "department_entity" not in questions
     # Every answered slot must reach the SQL prompt, not only time/metric.
-    rewritten = llm.sql_requests[0]["question"]
+    rewritten = sql_llm.generate_calls[0]["question"]
     assert "统计时间字段" in rewritten
     assert "患者范围" in rewritten
 
 
 def test_resume_does_not_rerun_plan(knowledge):
-    llm = FakeLLMClient(sql="SELECT 3")
+    llm = FakeLLMClient()
     graph = make_graph(knowledge, llm)
     cfg = config()
 
@@ -179,7 +199,6 @@ def test_polish_rewrites_wording_but_keeps_option_identity():
         "default": "名称包含",
     }])
     llm = FakeLLMClient(
-        sql="SELECT 4",
         polish={
             "question": "您说的“心内科”是指科室名称正好是“心内科”，还是名称里包含“心内科”也算？",
             "options": [
@@ -201,8 +220,9 @@ def test_polish_rewrites_wording_but_keeps_option_identity():
 
 
 def test_sql_failure_returns_error(knowledge):
-    llm = FakeLLMClient(sql=None)
-    result = make_graph(knowledge, llm).invoke(
+    llm = FakeLLMClient()
+    sql_llm = FakeSQLAgentLLM([[]])
+    result = make_graph(knowledge, llm, sql_llm=sql_llm).invoke(
         {"original_question": "2025年1月急诊人次"}, config=config()
     )
 
@@ -213,7 +233,6 @@ def test_sql_failure_returns_error(knowledge):
 
 def test_llm_supplement_adds_non_blocking_ambiguity(knowledge):
     llm = FakeLLMClient(
-        sql="SELECT 5",
         supplements=[{
             "code": "llm_semantic_x",
             "category": "semantic",

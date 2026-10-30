@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     # SQLite mirror used by C's self-refine generator.
     sqlite_db_path: str = "data/synthetic/medical.db"
     max_repair_rounds: int = 2
+    sql_llm_evaluate: bool = False
+    sql_exec_timeout: int = 5
+    sql_max_rows: int = 50
+    sql_max_candidates: int = 3
 
     host: str = "0.0.0.0"
     port: int = 8000
