@@ -11,6 +11,9 @@ dependencies = [
     "sqlalchemy",
     "langgraph",
     "langchain-core",
+    "langchain-deepseek",
+    "openai",
+    "sqlglot",
     "python-dotenv",
 ]
 
@@ -20,6 +23,11 @@ dev = [
     "pytest-asyncio",
     "httpx",
     "ruff",
+]
+# Only needed for one-off Excel -> JSON conversion scripts.
+data = [
+    "pandas",
+    "openpyxl",
 ]
 
 [build-system]
