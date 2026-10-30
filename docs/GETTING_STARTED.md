@@ -123,7 +123,7 @@ copy .env.example .env
 
 ```text
 LLM_API_KEY=sk-你的DeepSeekKey
-LLM_MODEL=deepseek-chat
+LLM_MODEL=deepseek-flash
 LLM_BASE_URL=https://api.deepseek.com
 ```
 
