@@ -35,6 +35,30 @@ def _time_range(label: str, reference: str) -> str | None:
     return None
 
 
+def _schema_links(context: dict) -> list[dict]:
+    """Flatten ``SchemaContext`` into ``[{table, columns, relationship}]``.
+
+    Built from the context ``finalize`` already computed, so no extra
+    knowledge-layer call is needed.
+    """
+    tables = context.get("tables") or []
+    columns = context.get("columns") or {}
+    paths = context.get("join_paths") or []
+    links = []
+    for table in tables:
+        related = [
+            f"{path.get('from_table')}→{path.get('to_table')}"
+            for path in paths
+            if table in (path.get("from_table"), path.get("to_table"))
+        ]
+        links.append({
+            "table": table,
+            "columns": list(columns.get(table, [])),
+            "relationship": "；".join(related),
+        })
+    return links
+
+
 def _department_token(state: GraphState) -> str | None:
     for term in state.get("terms", []):
         target = term.get("target", {})
@@ -87,9 +111,11 @@ def run(state: GraphState, deps) -> dict:
         rewritten = f"{original}\n补充条件：" + "；".join(extras) + "。"
 
     context = deps.knowledge.get_schema_context(rewritten)
+    context_dict = context.to_dict()
     return {
         "rewritten_question": rewritten,
-        "schema_context": context.to_dict(),
+        "schema_context": context_dict,
+        "schema_links": _schema_links(context_dict),
         "trace": [{
             "node": "finalize_question",
             "rewritten_question": rewritten,

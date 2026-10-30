@@ -90,6 +90,7 @@ def _to_response(result: dict[str, Any], session_id: str, query_id: str) -> Quer
         status=status,
         sql=sql,
         sql_source=result.get("sql_source") if status == "ok" else None,
+        schema_links=result.get("schema_links") or [],
         clarification=_clarification(result),
         assumptions=assumptions,
         clarification_history=result.get("clarification_history") or [],

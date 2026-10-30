@@ -11,6 +11,10 @@ class GraphDeps:
     knowledge: FileKnowledgeProvider
     llm: LLMClient
     settings: Any
+    # Injected by tests (and optionally by deployments) to keep the SQL
+    # generation subgraph offline; ``None`` builds the real client/executor.
+    sql_llm: Any | None = None
+    sql_executor: Any | None = None
 
 
 def build_deps(

@@ -42,6 +42,7 @@ class QueryResponse(BaseModel):
     status: Literal["ok", "needs_clarification", "error"]
     sql: str | None = None
     sql_source: str | None = None
+    schema_links: list[dict[str, Any]] = Field(default_factory=list)
     clarification: Clarification | None = None
     assumptions: list[Assumption] = Field(default_factory=list)
     clarification_history: list[dict[str, Any]] = Field(default_factory=list)

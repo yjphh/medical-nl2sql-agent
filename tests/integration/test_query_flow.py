@@ -11,7 +11,7 @@ from app.graph.builder import build_graph
 from app.graph.deps import GraphDeps
 from app.knowledge.provider import FileKnowledgeProvider
 from app.main import app
-from tests.fakes import FakeLLMClient
+from tests.fakes import FakeExecutor, FakeLLMClient, FakeSQLAgentLLM
 
 client = TestClient(app)
 
@@ -20,8 +20,13 @@ client = TestClient(app)
 def fake_graph():
     deps = GraphDeps(
         knowledge=FileKnowledgeProvider("data"),
-        llm=FakeLLMClient(sql="SELECT COUNT(*) AS visits FROM visit"),
+        llm=FakeLLMClient(),
         settings=settings,
+        sql_llm=FakeSQLAgentLLM(
+            [],
+            default_batch=[{"sql": "SELECT COUNT(*) AS visits FROM visit"}],
+        ),
+        sql_executor=FakeExecutor(),
     )
     runtime.set_deps(deps)
     runtime.set_graph(build_graph(deps))
@@ -45,8 +50,13 @@ def test_query_without_ambiguity_returns_sql():
     body = response.json()
     assert body["status"] == "ok"
     assert body["sql"] == "SELECT COUNT(*) AS visits FROM visit"
+    assert body["sql_source"] == "sqlite"
     assert body["clarification"] is None
     assert "未执行" in body["message"]
+    # schema_links must survive finalize -> subgraph -> API response.
+    assert body["schema_links"]
+    link = body["schema_links"][0]
+    assert {"table", "columns", "relationship"} <= set(link)
 
     status = client.get(f"/queries/{body['query_id']}")
     assert status.status_code == 200
